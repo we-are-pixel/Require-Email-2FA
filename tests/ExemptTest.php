@@ -51,4 +51,34 @@ final class ExemptTest extends TestCase {
 		$this->setFilter( 'force_2fa_user_is_exempt', true );
 		$this->assertTrue( force_2fa_user_is_exempt( $user ) );
 	}
+
+	public function test_excluded_roles_filter_accepts_a_single_string(): void {
+		$this->setFilter( 'force_2fa_excluded_roles', 'subscriber' );
+		$user = $this->user( 7, 'sub', array( 'subscriber' ) );
+		$this->assertTrue( force_2fa_user_is_exempt( $user ) );
+	}
+
+	public function test_null_excluded_roles_filter_means_no_exclusions(): void {
+		$this->setFilter( 'force_2fa_excluded_roles', null );
+		$user = $this->user( 8, 'sub', array( 'subscriber' ) );
+		$this->assertFalse( force_2fa_user_is_exempt( $user ) );
+	}
+
+	public function test_malformed_excluded_roles_entries_are_ignored(): void {
+		$this->setFilter(
+			'force_2fa_excluded_roles',
+			array(
+				array( 'subscriber' ),
+				new \stdClass(),
+				null,
+				'customer',
+			)
+		);
+
+		$subscriber = $this->user( 9, 'sub', array( 'subscriber' ) );
+		$customer   = $this->user( 10, 'customer', array( 'customer' ) );
+
+		$this->assertFalse( force_2fa_user_is_exempt( $subscriber ) );
+		$this->assertTrue( force_2fa_user_is_exempt( $customer ) );
+	}
 }

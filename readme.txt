@@ -1,4 +1,4 @@
-=== Force Email Two-Factor (Enforcement) ===
+=== Require Email 2FA ===
 Contributors: dknauss
 Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 6.5
@@ -69,6 +69,18 @@ The [Two Factor](https://wordpress.org/plugins/two-factor/) plugin must be
 installed and active. Confirm outbound email (SMTP) delivers reliably before
 rollout, since email becomes the required factor for users with no stronger one.
 
+= Rollout checklist =
+
+Before production activation:
+
+* Confirm SMTP / transactional email delivery works.
+* Keep a known-good administrator session open.
+* Generate and safely store administrator backup codes.
+* Test one non-admin login before broad rollout.
+* Choose the right activation mode: single-site, Network Activate, or `mu-loader.php`.
+* Identify REST/XML-RPC service accounts and decide whether they need allowlisting.
+* Document the `FORCE_2FA_DISABLE` kill switch in your incident runbook.
+
 == Frequently Asked Questions ==
 
 = Why does it require WordPress 6.5+? =
@@ -92,11 +104,27 @@ the `FORCE_2FA_EXCLUDED_ROLES` constant. A user is exempt only if every role the
 hold is on the list, so excluding a low-privilege role can never accidentally
 exempt a privileged account.
 
+You can also override the effective list without editing this plugin:
+
+`
+add_filter( 'force_2fa_excluded_roles', function () {
+	return array( 'subscriber', 'customer' );
+} );
+`
+
 = How do I let an integration log in over the REST API or XML-RPC? =
 
 Add its user ID or login to `FORCE_2FA_API_LOGIN_ALLOWLIST`, and have it
 authenticate with an Application Password. A real-password API login is always
 denied, even for allowlisted accounts.
+
+You can also override the effective allowlist without editing this plugin:
+
+`
+add_filter( 'force_2fa_api_login_allowlist', function () {
+	return array( 123, 'svc_headless' );
+} );
+`
 
 = Should I network-activate or activate per-site on multisite? =
 
@@ -109,6 +137,16 @@ enforcement. For an un-deactivatable install, use the bundled `mu-loader.php`.
 
 No. It appends the Email provider as a floor; any stronger factor the user
 configured stays in place and remains their primary method.
+
+= What are the known limitations? =
+
+Mail delivery is part of the security boundary; if outbound email fails, users
+without a stronger factor can be locked out until mail is fixed or
+`FORCE_2FA_DISABLE` is enabled. This plugin only enforces the Two Factor plugin
+and does not integrate with other 2FA plugins. Per-site multisite activation is
+not a network-wide guarantee; use Network Activate or the optional mu-loader for
+that. API bypasses are intentionally narrow: only allowlisted accounts using
+Application Passwords can skip the interactive challenge.
 
 == Changelog ==
 

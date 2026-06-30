@@ -1,0 +1,82 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not include passwords, 2FA codes, application passwords, or private security details.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reproducible sequence.
+      placeholder: |
+        1. Install/activate ...
+        2. Configure ...
+        3. Log in as ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: dropdown
+    id: activation_mode
+    attributes:
+      label: Activation mode
+      options:
+        - Single-site normal activation
+        - Multisite network activation
+        - Multisite per-site activation
+        - mu-loader force-load
+        - Other / unsure
+    validations:
+      required: true
+  - type: input
+    id: wordpress_version
+    attributes:
+      label: WordPress version
+      placeholder: "7.0"
+    validations:
+      required: true
+  - type: input
+    id: php_version
+    attributes:
+      label: PHP version
+      placeholder: "8.3"
+    validations:
+      required: true
+  - type: input
+    id: two_factor_version
+    attributes:
+      label: Two Factor plugin version
+      placeholder: "0.14.0"
+    validations:
+      required: true
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Relevant configuration
+      description: Mention role exclusions, API allowlist entries by type (ID/login), mu-loader use, SMTP/mail logging, and whether the kill switch is set. Do not paste secrets.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste sanitized logs or screenshots if helpful.
+    validations:
+      required: false

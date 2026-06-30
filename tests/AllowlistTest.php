@@ -44,4 +44,33 @@ final class AllowlistTest extends TestCase {
 		$user = $this->user( 5, 'someoneelse', array( 'author' ) );
 		$this->assertFalse( force_2fa_user_is_api_allowlisted( $user ) );
 	}
+
+	public function test_allowlist_filter_accepts_a_single_login_string(): void {
+		$this->setFilter( 'force_2fa_api_login_allowlist', 'svc_headless' );
+		$user = $this->user( 8, 'SVC_Headless', array( 'author' ) );
+		$this->assertTrue( force_2fa_user_is_api_allowlisted( $user ) );
+	}
+
+	public function test_null_allowlist_filter_matches_nobody(): void {
+		$this->setFilter( 'force_2fa_api_login_allowlist', null );
+		$user = $this->user( 9, 'svc_headless', array( 'author' ) );
+		$this->assertFalse( force_2fa_user_is_api_allowlisted( $user ) );
+	}
+
+	public function test_malformed_allowlist_entries_are_ignored(): void {
+		$this->setFilter(
+			'force_2fa_api_login_allowlist',
+			array(
+				array( 10 ),
+				new \stdClass(),
+				null,
+				false,
+				'',
+				'svc_headless',
+			)
+		);
+
+		$user = $this->user( 10, 'SVC_Headless', array( 'author' ) );
+		$this->assertTrue( force_2fa_user_is_api_allowlisted( $user ) );
+	}
 }

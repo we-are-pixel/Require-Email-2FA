@@ -1,0 +1,24 @@
+name: Documentation improvement
+description: Report unclear, stale, or missing documentation
+title: "[Docs]: "
+labels: ["documentation", "triage"]
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link to the section or name the file.
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is unclear or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or fix
+    validations:
+      required: false

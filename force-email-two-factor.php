@@ -1,10 +1,11 @@
 <?php
 /**
- * Plugin Name: Force Email Two-Factor (Enforcement)
+ * Plugin Name: Require Email 2FA
  * Description:      Requires the Two Factor plugin and makes emailed 2FA codes mandatory for all users by default.
  * Author:           Dan Knauss
  * Version:          1.6.1
  * Network:          false
+ * Requires PHP:     7.2
  * Requires Plugins: two-factor
  * License:          GPL-2.0-or-later
  * License URI:      https://www.gnu.org/licenses/gpl-2.0.html
@@ -123,6 +124,31 @@ function force_2fa_excluded_roles() {
 }
 
 /**
+ * Normalize a list of role or login strings from constants/filters.
+ *
+ * Configuration filters are operator-controlled, but defensive normalization
+ * avoids PHP warnings if a filter returns null, a scalar, or a mixed array.
+ *
+ * @param mixed $values Raw config value.
+ * @return string[] Lowercase scalar entries; non-scalar entries are ignored.
+ */
+function force_2fa_normalize_string_list( $values ) {
+	$normalized = array();
+
+	foreach ( (array) $values as $value ) {
+		if ( is_scalar( $value ) ) {
+			$value = strtolower( trim( (string) $value ) );
+
+			if ( '' !== $value ) {
+				$normalized[] = $value;
+			}
+		}
+	}
+
+	return $normalized;
+}
+
+/**
  * Whether a user is exempt from forced two-factor.
  *
  * Exempt only when the user has at least one role AND all of their roles are in
@@ -134,8 +160,8 @@ function force_2fa_excluded_roles() {
  * @return bool True if forced 2FA should be skipped for this user.
  */
 function force_2fa_user_is_exempt( WP_User $user ) {
-	$excluded = array_map( 'strtolower', force_2fa_excluded_roles() );
-	$roles    = array_map( 'strtolower', (array) $user->roles );
+	$excluded = force_2fa_normalize_string_list( force_2fa_excluded_roles() );
+	$roles    = force_2fa_normalize_string_list( $user->roles );
 	$exempt   = ! empty( $roles )
 		&& ! empty( $excluded )
 		&& empty( array_diff( $roles, $excluded ) );
@@ -275,11 +301,20 @@ function force_2fa_api_login_allowlist() {
  */
 function force_2fa_user_is_api_allowlisted( WP_User $user ) {
 	foreach ( force_2fa_api_login_allowlist() as $entry ) {
-		if ( is_int( $entry ) || ctype_digit( (string) $entry ) ) {
+		if ( ! is_scalar( $entry ) ) {
+			continue;
+		}
+
+		$entry = trim( (string) $entry );
+		if ( '' === $entry ) {
+			continue;
+		}
+
+		if ( ctype_digit( $entry ) ) {
 			if ( (int) $entry === (int) $user->ID ) {
 				return true;
 			}
-		} elseif ( strtolower( (string) $entry ) === strtolower( $user->user_login ) ) {
+		} elseif ( strtolower( $entry ) === strtolower( $user->user_login ) ) {
 			return true;
 		}
 	}

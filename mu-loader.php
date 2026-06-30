@@ -1,6 +1,6 @@
 <?php
 /**
- * MU loader for Force Email Two-Factor (Enforcement).
+ * MU loader for Require Email 2FA.
  *
  * OPTIONAL. Copy THIS single file into wp-content/mu-plugins/ to force-load the
  * plugin on every request so it cannot be deactivated from the admin UI. The

@@ -1,10 +1,10 @@
-# Force Email Two-Factor (Enforcement)
+# Require Email 2FA
 
 [![CI](https://github.com/dknauss/force-email-two-factor/actions/workflows/ci.yml/badge.svg)](https://github.com/dknauss/force-email-two-factor/actions/workflows/ci.yml)
-[![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](LICENSE)
-![WordPress](https://img.shields.io/badge/WordPress-6.5%2B-21759b?logo=wordpress&logoColor=white)
-![PHP](https://img.shields.io/badge/PHP-7.2%2B-777bb4?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.6.1-green.svg)
+[![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
+[![WordPress](https://img.shields.io/badge/WordPress-6.5%2B-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/)
+[![PHP](https://img.shields.io/badge/PHP-7.2%2B-777bb4?logo=php&logoColor=white)](https://www.php.net/)
+[![Requires Plugin: Two Factor](https://img.shields.io/badge/requires-Two%20Factor-3858e9.svg)](https://wordpress.org/plugins/two-factor/)
 [![Open in WordPress Playground](https://img.shields.io/badge/WordPress_Playground-Try_it_live-3858e9?logo=wordpress&logoColor=white)][playground]
 
 A WordPress plugin that makes two-factor authentication mandatory for every user,
@@ -83,6 +83,20 @@ Email 2FA depends on outbound mail. Confirm transactional email actually deliver
 session or printed backup codes on hand in case mail is misconfigured. Otherwise
 a mail outage can lock out every user who has no stronger factor.
 
+### Operational rollout checklist
+
+Before enabling enforcement on a production site:
+
+- [ ] Confirm SMTP / transactional email delivery works for real user mailboxes.
+- [ ] Keep at least one known-good administrator session open during rollout.
+- [ ] Generate and safely store backup codes for administrator accounts.
+- [ ] Test the login flow with one non-admin user before broad activation.
+- [ ] Choose the activation mode deliberately: normal single-site, Network Activate
+      for multisite-wide enforcement, or the optional `mu-loader.php`.
+- [ ] Identify any REST/XML-RPC service accounts up front and decide whether each
+      one should be allowlisted for Application Password authentication.
+- [ ] Document the `FORCE_2FA_DISABLE` kill switch in your incident runbook.
+
 ---
 
 ## Configuration
@@ -95,6 +109,15 @@ the `FORCE_2FA_EXCLUDED_ROLES` constant:
 
 ```php
 const FORCE_2FA_EXCLUDED_ROLES = array( 'subscriber', 'customer' );
+```
+
+Or, without editing this plugin file, override the effective list from a small
+site-specific plugin or mu-plugin:
+
+```php
+add_filter( 'force_2fa_excluded_roles', function () {
+	return array( 'subscriber', 'customer' );
+} );
 ```
 
 Empty (the default) = enforce on everyone.
@@ -137,6 +160,17 @@ const FORCE_2FA_API_LOGIN_ALLOWLIST = array(
 	123,            // by user ID — preferred, survives login renames
 	'svc_headless', // by user_login
 );
+```
+
+Or override the effective allowlist at runtime from site-specific code:
+
+```php
+add_filter( 'force_2fa_api_login_allowlist', function () {
+	return array(
+		123,            // by user ID — preferred
+		'svc_headless', // by user_login
+	);
+} );
 ```
 
 Leave it empty (the default) to permit **no** API logins at all.
@@ -256,6 +290,33 @@ won't actually take effect.
 
 ---
 
+## Known limitations
+
+- **Mail delivery is part of the security boundary.** If outbound email fails,
+  users without a stronger factor can be locked out until mail is fixed or
+  `FORCE_2FA_DISABLE` is enabled.
+- **Only the Two Factor plugin is enforced.** Other 2FA plugins are not affected,
+  and they do not satisfy the `Requires Plugins: two-factor` dependency.
+- **Per-site multisite activation is not network-wide enforcement.** Users are
+  network-global, so use Network Activate or the optional mu-loader for a true
+  network-wide guarantee.
+- **API bypasses are intentionally narrow.** XML-RPC/REST logins can skip the
+  interactive challenge only for allowlisted accounts using Application Passwords.
+- **Email can be weaker than TOTP/WebAuthn.** This plugin uses Email as a universal
+  no-setup floor while preserving stronger factors users have already configured.
+
+
+---
+
+## Contributing, support, and security
+
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, test commands, and pull request expectations.
+- See [SUPPORT.md](SUPPORT.md) for support boundaries and the information needed in bug reports.
+- See [SECURITY.md](SECURITY.md) to report vulnerabilities privately.
+- This project follows a [Code of Conduct](CODE_OF_CONDUCT.md).
+
+---
+
 ## Development
 
 > **PHP version:** the *plugin* supports PHP 7.2+ (enforced by the lint matrix and
@@ -300,6 +361,21 @@ The config constants (`FORCE_2FA_EXCLUDED_ROLES`, `FORCE_2FA_API_LOGIN_ALLOWLIST
 are read through filter accessors (`force_2fa_excluded_roles`,
 `force_2fa_api_login_allowlist`), so values are overridable at runtime and
 injectable in tests.
+
+### Release checklist
+
+Before tagging a release:
+
+- [ ] Update `Version` and `FORCE_2FA_LOADED` in `force-email-two-factor.php`.
+- [ ] Update `Stable tag`, changelog, and compatibility fields in `readme.txt`.
+- [ ] Update README badges or examples if version/support claims changed.
+- [ ] Run `php playground/build-blueprint.php` and confirm
+      `playground/blueprint.json` has no drift.
+- [ ] Run `composer check`.
+- [ ] Run `vendor/bin/phpunit --coverage-text` with PCOV or Xdebug if validating
+      local coverage.
+- [ ] Smoke-test the Playground blueprint and at least one real login flow.
+- [ ] Tag the release and publish release notes from the changelog.
 
 ## License
 
