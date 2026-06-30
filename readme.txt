@@ -1,21 +1,22 @@
 === Force Email Two-Factor (Enforcement) ===
 Contributors: dknauss
 Tags: two-factor, 2fa, security, authentication, login
-Requires at least: 5.6
+Requires at least: 6.5
 Tested up to: 6.5
 Requires PHP: 7.2
 Requires Plugins: two-factor
-Stable tag: 1.6.0
+Stable tag: 1.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Makes two-factor mandatory for all users via the Two Factor plugin's Email provider, with per-role exclusions and a hardened API-login allowlist.
+Requires the Two Factor plugin and makes emailed 2FA codes mandatory for all users by default, with per-role exclusions.
 
 == Description ==
 
-A single-file must-use plugin that enforces two-factor authentication across a
-site, building on the [Two Factor](https://wordpress.org/plugins/two-factor/)
-plugin (which must be installed and active).
+Requires the [Two Factor](https://wordpress.org/plugins/two-factor/) plugin
+(which must be installed and active) and makes its emailed 2FA codes a mandatory
+baseline for every user — so the login challenge appears even for accounts that
+never set up two-factor. Install network-wide or per-site on multisite.
 
 It does two things:
 
@@ -70,6 +71,14 @@ rollout, since email becomes the required factor for users with no stronger one.
 
 == Frequently Asked Questions ==
 
+= Why does it require WordPress 6.5+? =
+
+The `Requires Plugins` header that gates activation on the Two Factor plugin was
+added in WordPress 6.5; on older versions that header is simply ignored. The
+plugin's own runtime guard still prevents fatals if Two Factor is missing, so it
+degrades safely below 6.5 — it just can't *block* activation there. If you need to
+run on older WordPress, you can lower `Requires at least` and rely on that guard.
+
 = What if email delivery breaks and users are locked out? =
 
 Add `define( 'FORCE_2FA_DISABLE', true );` to `wp-config.php`. The plugin checks
@@ -102,6 +111,12 @@ No. It appends the Email provider as a floor; any stronger factor the user
 configured stays in place and remains their primary method.
 
 == Changelog ==
+
+= 1.6.1 =
+* Shorten and clarify the plugin description.
+* Set "Requires at least" to 6.5 to match the `Requires Plugins` dependency
+  gating (the header is ignored on older WordPress) and document this in the FAQ.
+* Fix stale "must-use plugin" wording in the readme.
 
 = 1.6.0 =
 * Add filter accessors `force_2fa_excluded_roles` and `force_2fa_api_login_allowlist`

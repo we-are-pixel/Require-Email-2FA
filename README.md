@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/dknauss/force-email-two-factor/actions/workflows/ci.yml/badge.svg)](https://github.com/dknauss/force-email-two-factor/actions/workflows/ci.yml)
 [![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](LICENSE)
-![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759b?logo=wordpress&logoColor=white)
+![WordPress](https://img.shields.io/badge/WordPress-6.5%2B-21759b?logo=wordpress&logoColor=white)
 ![PHP](https://img.shields.io/badge/PHP-7.2%2B-777bb4?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.6.0-green.svg)
+![Version](https://img.shields.io/badge/version-1.6.1-green.svg)
 [![Open in WordPress Playground](https://img.shields.io/badge/WordPress_Playground-Try_it_live-3858e9?logo=wordpress&logoColor=white)][playground]
 
 A WordPress plugin that makes two-factor authentication mandatory for every user,

@@ -1,15 +1,9 @@
 <?php
 /**
  * Plugin Name: Force Email Two-Factor (Enforcement)
- * Description: Requires the Two Factor plugin's Email provider for every user, so
- *              two-factor is mandatory at login while stronger factors (TOTP,
- *              hardware keys) and backup codes remain available. Enforcement
- *              defaults to ALL users, with optional per-role exclusions.
- *              Restricts the XML-RPC / REST API-login path to an allowlist of
- *              service accounts, and only when they authenticate with an
- *              Application Password.
+ * Description:      Requires the Two Factor plugin and makes emailed 2FA codes mandatory for all users by default.
  * Author:           Dan Knauss
- * Version:          1.6.0
+ * Version:          1.6.1
  * Network:          false
  * Requires Plugins: two-factor
  * License:          GPL-2.0-or-later
@@ -74,7 +68,7 @@ if ( defined( 'FORCE_2FA_DISABLE' ) && FORCE_2FA_DISABLE ) {
 if ( defined( 'FORCE_2FA_LOADED' ) ) {
 	return;
 }
-define( 'FORCE_2FA_LOADED', '1.6.0' );
+define( 'FORCE_2FA_LOADED', '1.6.1' );
 
 /**
  * Roles to EXCLUDE from forced two-factor.
