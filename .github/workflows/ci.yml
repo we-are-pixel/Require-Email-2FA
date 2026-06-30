@@ -60,3 +60,53 @@ jobs:
         run: composer install --no-interaction --no-progress --prefer-dist
       - name: PHPUnit (unit + integration)
         run: vendor/bin/phpunit
+
+  coverage:
+    name: Coverage (PHP 8.3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: pcov
+          tools: composer:v2
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: PHPUnit with coverage
+        run: |
+          vendor/bin/phpunit --coverage-text --coverage-clover=coverage.xml | tee coverage.txt
+          {
+            echo '### Code coverage'
+            echo '```'
+            cat coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-clover
+          path: coverage.xml
+      - name: Upload to Codecov (no-op unless the repo is enabled there)
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  playground-integration:
+    name: Playground integration (real Two Factor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Boot real WordPress + Two Factor, assert enforcement end-to-end
+        run: |
+          rm -f .ci-result
+          npx --yes @wp-playground/cli@3.1.43 run-blueprint \
+            --blueprint=playground/ci-blueprint.json \
+            --mount="$PWD:/wordpress/wp-content/plugins/force-email-two-factor"
+          echo "Assertion result: $(cat .ci-result 2>/dev/null || echo MISSING)"
+          test "$(cat .ci-result 2>/dev/null)" = "FORCE2FA_ASSERT_OK"

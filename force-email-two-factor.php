@@ -314,7 +314,11 @@ function force_2fa_filter_api_login_enable( $enable, $user ) {
 	// (a) ...and only for named service accounts.
 	return force_2fa_user_is_api_allowlisted( $user );
 }
-add_filter( 'two_factor_user_api_login_enable', 'force_2fa_filter_api_login_enable', 10, 2
+add_filter(
+	'two_factor_user_api_login_enable',
+	'force_2fa_filter_api_login_enable',
+	10,
+	2
 );
 
 /*
@@ -326,4 +330,5 @@ add_filter( 'two_factor_user_api_login_enable', 'force_2fa_filter_api_login_enab
  * without breaking the endpoint, so prefer leaving this off unless you have a
  * specific reason to shut XML-RPC down completely.
  */
+// phpcs:ignore Squiz.PHP.CommentedOutCode.Found -- Intentional opt-in example, left commented by design.
 // add_filter( 'xmlrpc_enabled', '__return_false' );

@@ -231,14 +231,28 @@ Tests run on a zero-dependency stub bootstrap (no WordPress install required):
 ```sh
 composer install
 composer test                       # PHPUnit: unit + integration
-composer phpcs                      # PHPCompatibility (PHP 7.2+ floor)
+composer phpcs                      # PHPCompatibility (7.2+) + WordPress-Extra
+composer phpcbf                     # auto-fix coding-standards issues
 composer check                      # phpcs + tests
 vendor/bin/phpunit --testsuite integration   # one suite
+vendor/bin/phpunit --coverage-text  # coverage (needs Xdebug or PCOV)
 ```
 
-CI ([GitHub Actions](.github/workflows/ci.yml)) runs three jobs on every push and
-pull request: **lint** (`php -l`, PHP 7.2–8.4), **PHPCS/PHPCompatibility**
-(asserting the PHP 7.2 floor), and **PHPUnit** (unit + integration, PHP 8.2–8.4).
+Coding standards are **WordPress-Extra** (style + security sniffs) plus
+**PHPCompatibility** with `testVersion 7.2-`, scoped to the production files
+(`phpcs.xml.dist`).
+
+CI ([GitHub Actions](.github/workflows/ci.yml)) runs on every push and pull
+request:
+
+- **lint** — `php -l`, PHP 7.2–8.4
+- **PHPCS / PHPCompatibility** — coding standards + the PHP 7.2 floor
+- **PHPUnit** — unit + integration, PHP 8.2–8.4
+- **coverage** — PHPUnit coverage (PCOV); summary in the job's GitHub summary,
+  clover uploaded as an artifact (and to Codecov if the repo is enabled there)
+- **Playground integration** — boots a real WordPress + the real Two Factor
+  plugin headlessly and asserts enforcement end-to-end (see
+  [`playground/ci-blueprint.json`](playground/ci-blueprint.json))
 
 The config constants (`FORCE_2FA_EXCLUDED_ROLES`, `FORCE_2FA_API_LOGIN_ALLOWLIST`)
 are read through filter accessors (`force_2fa_excluded_roles`,

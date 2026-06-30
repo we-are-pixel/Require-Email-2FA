@@ -4,6 +4,11 @@
          bootstrap="tests/bootstrap.php"
          colors="true"
          cacheDirectory=".phpunit.cache">
+    <source>
+        <include>
+            <file>force-email-two-factor.php</file>
+        </include>
+    </source>
     <testsuites>
         <testsuite name="unit">
             <file>tests/ExemptTest.php</file>

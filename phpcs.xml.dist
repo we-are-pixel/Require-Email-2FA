@@ -15,4 +15,21 @@
     <!-- Verify the plugin runs on every PHP version it claims to support. -->
     <config name="testVersion" value="7.2-"/>
     <rule ref="PHPCompatibility"/>
+
+    <!-- WordPress coding standards: style + security best practices. -->
+    <config name="minimum_wp_version" value="6.5"/>
+    <rule ref="WordPress-Extra">
+        <!-- No user-facing translatable strings in this plugin. -->
+        <exclude name="WordPress.WP.I18n"/>
+    </rule>
+
+    <!-- All globals this plugin defines use these prefixes. -->
+    <rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+        <properties>
+            <property name="prefixes" type="array">
+                <element value="force_2fa"/>
+                <element value="FORCE_2FA"/>
+            </property>
+        </properties>
+    </rule>
 </ruleset>
