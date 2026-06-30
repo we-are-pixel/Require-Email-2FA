@@ -61,6 +61,29 @@ if ( ! class_exists( 'Two_Factor_Email' ) ) {
 	class Two_Factor_Email {}
 }
 
+// Minimal stand-in for the Two Factor plugin's core, mirroring the real contract
+// the integration tests depend on: enabled providers are produced by the
+// 'two_factor_enabled_providers_for_user' filter (which our plugin hooks), the
+// primary provider is the first enabled one, and a user "uses 2FA" when a primary
+// provider exists. We feed providers through the plugin's own filter callback so
+// the test exercises real enforcement behaviour, not a reimplementation of it.
+if ( ! class_exists( 'Two_Factor_Core' ) ) {
+	class Two_Factor_Core {
+		public static function get_enabled_providers_for_user( $user_id, array $stored = array() ) {
+			return force_2fa_filter_enabled_providers( $stored, $user_id );
+		}
+
+		public static function get_primary_provider_for_user( $user_id, array $stored = array() ) {
+			$providers = self::get_enabled_providers_for_user( $user_id, $stored );
+			return $providers ? reset( $providers ) : null;
+		}
+
+		public static function is_user_using_two_factor( $user_id ) {
+			return ! empty( self::get_primary_provider_for_user( $user_id ) );
+		}
+	}
+}
+
 // --- Load the plugin under test ----------------------------------------------
 
 require dirname( __DIR__ ) . '/force-email-two-factor.php';

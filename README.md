@@ -220,17 +220,25 @@ the line (or set it to `false`) to re-enable enforcement.
 
 ## Development
 
-Unit tests cover the security-critical decision logic — role exclusions, the
-API-login allowlist, and both filter callbacks — with a zero-dependency stub
-bootstrap (no WordPress install required):
+Tests run on a zero-dependency stub bootstrap (no WordPress install required):
+
+- **Unit** — the security-critical decision logic: role exclusions, the API-login
+  allowlist, and both filter callbacks.
+- **Integration** — the plugin's contract with Two Factor: that appending Email
+  makes `Two_Factor_Core::is_user_using_two_factor()` true (the login challenge
+  fires), excluded users stay unenforced, and a user's stronger factor is kept.
 
 ```sh
 composer install
-composer test        # or: vendor/bin/phpunit
+composer test                       # PHPUnit: unit + integration
+composer phpcs                      # PHPCompatibility (PHP 7.2+ floor)
+composer check                      # phpcs + tests
+vendor/bin/phpunit --testsuite integration   # one suite
 ```
 
-CI ([GitHub Actions](.github/workflows/ci.yml)) lints on PHP 7.2–8.4 and runs the
-suite on PHP 8.2–8.4 for every push and pull request.
+CI ([GitHub Actions](.github/workflows/ci.yml)) runs three jobs on every push and
+pull request: **lint** (`php -l`, PHP 7.2–8.4), **PHPCS/PHPCompatibility**
+(asserting the PHP 7.2 floor), and **PHPUnit** (unit + integration, PHP 8.2–8.4).
 
 The config constants (`FORCE_2FA_EXCLUDED_ROLES`, `FORCE_2FA_API_LOGIN_ALLOWLIST`)
 are read through filter accessors (`force_2fa_excluded_roles`,

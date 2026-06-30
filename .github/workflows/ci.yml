@@ -27,8 +27,23 @@ jobs:
           find . -path ./vendor -prune -o -name '*.php' -print0 \
             | xargs -0 -n1 -P4 php -l
 
+  coding-standards:
+    name: PHPCS / PHPCompatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: PHPCS (PHPCompatibility, testVersion 7.2-)
+        run: vendor/bin/phpcs
+
   test:
-    name: Unit tests (PHP ${{ matrix.php }})
+    name: Unit + integration tests (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -43,5 +58,5 @@ jobs:
           tools: composer:v2
       - name: Install dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
-      - name: PHPUnit
+      - name: PHPUnit (unit + integration)
         run: vendor/bin/phpunit

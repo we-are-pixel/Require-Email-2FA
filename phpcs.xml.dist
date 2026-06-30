@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<ruleset name="force-email-two-factor">
+    <description>PHP cross-version compatibility check for the production plugin code.</description>
+
+    <!-- Production files only — dev/test code may use newer syntax. -->
+    <file>force-email-two-factor.php</file>
+    <file>mu-loader.php</file>
+
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/tests/*</exclude-pattern>
+
+    <arg name="colors"/>
+    <arg value="sp"/>
+
+    <!-- Verify the plugin runs on every PHP version it claims to support. -->
+    <config name="testVersion" value="7.2-"/>
+    <rule ref="PHPCompatibility"/>
+</ruleset>
