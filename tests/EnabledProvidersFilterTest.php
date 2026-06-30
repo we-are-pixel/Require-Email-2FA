@@ -46,4 +46,19 @@ final class EnabledProvidersFilterTest extends TestCase {
 		$result = force_2fa_filter_enabled_providers( array(), 999 );
 		$this->assertSame( array( 'Two_Factor_Email' ), $result );
 	}
+
+	public function test_register_hooks_wires_both_filters(): void {
+		$GLOBALS['__force2fa_added_filters'] = array();
+		force_2fa_register_hooks();
+
+		$tags = array_map(
+			static function ( $registration ) {
+				return $registration[0];
+			},
+			$GLOBALS['__force2fa_added_filters']
+		);
+
+		$this->assertContains( 'two_factor_enabled_providers_for_user', $tags );
+		$this->assertContains( 'two_factor_user_api_login_enable', $tags );
+	}
 }

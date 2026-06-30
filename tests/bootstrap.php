@@ -10,14 +10,17 @@
 
 define( 'ABSPATH', __DIR__ . '/' ); // satisfies the plugin's `defined('ABSPATH') || exit`.
 
-$GLOBALS['__force2fa_filters']    = array(); // hook => override return value
-$GLOBALS['__force2fa_users']      = array(); // id => WP_User
-$GLOBALS['__force2fa_did_action'] = array(); // hook => count
+$GLOBALS['__force2fa_filters']        = array(); // hook => override return value
+$GLOBALS['__force2fa_users']          = array(); // id => WP_User
+$GLOBALS['__force2fa_did_action']     = array(); // hook => count
+$GLOBALS['__force2fa_added_filters']  = array(); // [ tag, cb, priority, accepted_args ]
 
 // --- WordPress function stubs -------------------------------------------------
 
-// Registering hooks is a no-op here; we call the plugin's named callbacks directly.
-function add_filter() {
+// We call the plugin's named callbacks directly; add_filter just records the
+// registration so force_2fa_register_hooks() can be asserted.
+function add_filter( $tag = '', $cb = null, $priority = 10, $accepted_args = 1 ) {
+	$GLOBALS['__force2fa_added_filters'][] = array( $tag, $cb, $priority, $accepted_args );
 	return true;
 }
 

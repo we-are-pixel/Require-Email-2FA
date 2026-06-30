@@ -200,9 +200,6 @@ function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
 
 	return $enabled_providers;
 }
-// @codeCoverageIgnoreStart -- Hook registration runs at load; the wiring is verified by the Playground integration test.
-add_filter( 'two_factor_enabled_providers_for_user', 'force_2fa_filter_enabled_providers', 10, 2 );
-// @codeCoverageIgnoreEnd
 
 /**
  * Service-account allowlist for non-interactive API logins.
@@ -325,14 +322,18 @@ function force_2fa_filter_api_login_enable( $enable, $user ) {
 	// (a) ...and only for named service accounts.
 	return force_2fa_user_is_api_allowlisted( $user );
 }
-// @codeCoverageIgnoreStart -- Hook registration runs at load; the wiring is verified by the Playground integration test.
-add_filter(
-	'two_factor_user_api_login_enable',
-	'force_2fa_filter_api_login_enable',
-	10,
-	2
-);
-// @codeCoverageIgnoreEnd
+/**
+ * Register this plugin's WordPress filter hooks.
+ *
+ * Called once at load (below); also unit-tested directly, so the registrations
+ * are exercised under coverage rather than only at include time.
+ */
+function force_2fa_register_hooks() {
+	add_filter( 'two_factor_enabled_providers_for_user', 'force_2fa_filter_enabled_providers', 10, 2 );
+	add_filter( 'two_factor_user_api_login_enable', 'force_2fa_filter_api_login_enable', 10, 2 );
+}
+
+force_2fa_register_hooks();
 
 /*
  * Optional, stronger hardening — disable XML-RPC entirely.

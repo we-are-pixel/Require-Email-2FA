@@ -12,9 +12,10 @@ abstract class TestCase extends BaseTestCase {
 
 	protected function setUp(): void {
 		parent::setUp();
-		$GLOBALS['__force2fa_filters']    = array();
-		$GLOBALS['__force2fa_users']      = array();
-		$GLOBALS['__force2fa_did_action'] = array();
+		$GLOBALS['__force2fa_filters']       = array();
+		$GLOBALS['__force2fa_users']         = array();
+		$GLOBALS['__force2fa_did_action']    = array();
+		$GLOBALS['__force2fa_added_filters'] = array();
 	}
 
 	/** Register a WP_User that get_userdata() will return for its ID. */
