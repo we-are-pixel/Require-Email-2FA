@@ -32,16 +32,35 @@ that plugin must be installed and active for this to do anything.
 
 ## Installation
 
-Must-use plugins must be a **flat `.php` file** directly inside `mu-plugins/`
-(files in subdirectories are not auto-loaded).
+Install the plugin folder and activate it like any plugin:
 
 ```
-wp-content/mu-plugins/force-email-two-factor.php
+wp-content/plugins/force-email-two-factor/force-email-two-factor.php
 ```
 
-Create the `mu-plugins` directory if it doesn't exist. There is no activation
-step — must-use plugins load automatically on every request and don't appear in
-the Plugins screen.
+### Activation modes (multisite)
+
+* **Network Activate** (Network Admin → Plugins) — enforces across **all** sites.
+  This is the robust security baseline and the recommended mode.
+* **Per-site activate** (a single site's Plugins screen) — enforces only when the
+  plugin is active in the **current request's** site context.
+
+  ⚠️ On multisite, users and their Two Factor settings are network-global, but
+  this plugin only registers its filters where it is active. So per-site
+  activation keys enforcement off the **login entry point, not the user** — a
+  global user could authenticate via a site where the plugin is inactive and skip
+  enforcement. Use per-site only for "this site's team must use 2FA"; use Network
+  Activate for a true network-wide guarantee.
+
+On single-site WordPress, just activate it normally.
+
+### Optional: "cannot be deactivated" mode (mu-loader)
+
+To force-load the plugin so it can't be turned off from the admin UI, copy the
+included `mu-loader.php` into `wp-content/mu-plugins/` (a flat file). It
+`require`s the plugin from `wp-content/plugins/force-email-two-factor/`. Safe to
+combine with normal/network activation — a `FORCE_2FA_LOADED` re-load guard
+prevents double execution. The `FORCE_2FA_DISABLE` kill switch still applies.
 
 ### Before first activation
 
@@ -68,8 +87,16 @@ Empty (the default) = enforce on everyone.
 
 **Security rule:** a user is exempt only if *every* role they hold is on the list.
 A user with both an excluded role and a non-excluded one (e.g. `subscriber` +
-`editor`) is still enforced — so excluding a low-privilege role can never
-accidentally exempt a privileged account. Users with no role are never exempted.
+`editor`) is still enforced. Users with no role are never exempted.
+
+**Threat model / warning:** exclusions live in code (this constant or the
+`force_2fa_user_is_exempt` filter), which requires filesystem access — a trust
+level that can already disable 2FA entirely. Exclusions are therefore an
+*operator convenience, not an attacker-facing control*, and there is **no hard
+floor** protecting privileged accounts. If you exclude a role that a super admin
+or administrator holds *as their only role on a site*, that account will be
+exempt on that site. Choose excluded roles deliberately, and prefer the
+`force_2fa_user_is_exempt` filter to exempt a specific account surgically.
 
 Exclusion means "don't *force* 2FA"; it doesn't forbid it. An excluded user who
 set up their own 2FA keeps it.

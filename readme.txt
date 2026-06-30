@@ -4,7 +4,7 @@ Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 5.6
 Tested up to: 6.5
 Requires PHP: 7.2
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -43,14 +43,15 @@ It does two things:
 
 == Installation ==
 
-This is a must-use plugin. It must be a flat `.php` file directly inside
-`wp-content/mu-plugins/` (files in subdirectories are not auto-loaded):
-
-`wp-content/mu-plugins/force-email-two-factor.php`
-
-Create the `mu-plugins` directory if it does not exist. There is no activation
-step — must-use plugins load automatically and do not appear on the Plugins
-screen.
+1. Install the plugin folder at
+   `wp-content/plugins/force-email-two-factor/` and activate it.
+2. On multisite, choose an activation mode:
+   * Network Activate to enforce across all sites (recommended baseline).
+   * Activate per-site to enforce only on that site. Note: enforcement keys off
+     the login entry point, not the (network-global) user, so per-site is not a
+     network-wide guarantee.
+3. Optional "cannot be deactivated" mode: copy the bundled `mu-loader.php` into
+   `wp-content/mu-plugins/`. It force-loads the plugin on every request.
 
 The [Two Factor](https://wordpress.org/plugins/two-factor/) plugin must be
 installed and active. Confirm outbound email (SMTP) delivers reliably before
@@ -77,12 +78,30 @@ Add its user ID or login to `FORCE_2FA_API_LOGIN_ALLOWLIST`, and have it
 authenticate with an Application Password. A real-password API login is always
 denied, even for allowlisted accounts.
 
+= Should I network-activate or activate per-site on multisite? =
+
+Network Activate for a true network-wide guarantee. Per-site activation only
+enforces when the plugin is active in the site you log in through, and users are
+network-global, so a user could log in via a site where it is inactive and skip
+enforcement. For an un-deactivatable install, use the bundled `mu-loader.php`.
+
 = Does this remove a user's authenticator app or hardware key? =
 
 No. It appends the Email provider as a floor; any stronger factor the user
 configured stays in place and remains their primary method.
 
 == Changelog ==
+
+= 1.4.0 =
+* Repackage as a regular plugin supporting Network Activate or per-site
+  activation on multisite (was must-use only).
+* Add optional `mu-loader.php` for an un-deactivatable install, with a
+  `FORCE_2FA_LOADED` re-load guard so double-loading is safe.
+* Document the exclusion threat model: exclusions require filesystem access and
+  are an operator convenience, not an attacker-facing control; no hard floor
+  protects privileged accounts.
+* Verified end-to-end on a WordPress multisite (network, per-site, mu-loader,
+  and kill-switch paths).
 
 = 1.3.0 =
 * Add per-role enforcement exclusions (`FORCE_2FA_EXCLUDED_ROLES`, default all)

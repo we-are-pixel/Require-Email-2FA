@@ -9,16 +9,31 @@
  *              service accounts, and only when they authenticate with an
  *              Application Password.
  * Author:      Dan Knauss
- * Version:     1.3.0
+ * Version:     1.4.0
+ * Network:     false
  * License:     GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  *
  * ---------------------------------------------------------------------------
  * INSTALLATION
  * ---------------------------------------------------------------------------
- * Drop this file directly into wp-content/mu-plugins/ as a FLAT .php file.
- * Must-use plugins in subdirectories are NOT auto-loaded, so it has to sit at
- * wp-content/mu-plugins/force-email-two-factor.php (not in a nested folder).
+ * Install the folder at wp-content/plugins/force-email-two-factor/ and activate
+ * it like any plugin. On multisite you can either:
+ *
+ *   - Network Activate (Network Admin → Plugins) to enforce across ALL sites.
+ *     This is the robust security baseline and what we recommend.
+ *   - Activate per-site (a single site's Plugins screen). NOTE: on multisite,
+ *     users and their Two Factor settings are network-global, while this plugin
+ *     only enforces when it is active in the CURRENT request's site context.
+ *     Per-site activation therefore keys enforcement off the login entry point,
+ *     not off the user — a global user could authenticate via a site where this
+ *     is inactive and skip enforcement. Use per-site only for "this site's team
+ *     must use 2FA"; use Network Activate for a true network-wide guarantee.
+ *
+ * Optional "cannot be deactivated" mode: copy mu-loader.php from this folder
+ * into wp-content/mu-plugins/ (a flat file). It force-loads this plugin on every
+ * request so it can't be turned off from the admin. Safe to combine with normal
+ * activation — a re-load guard prevents double execution.
  *
  * Requires the Two Factor plugin: https://wordpress.org/plugins/two-factor/
  * If that plugin is inactive, every guard below no-ops safely (see notes).
@@ -46,6 +61,14 @@ if ( defined( 'FORCE_2FA_DISABLE' ) && FORCE_2FA_DISABLE ) {
 	return;
 }
 
+// Re-load guard: this file may be loaded both via the optional mu-loader and as
+// a normally-activated plugin. Bail on the second load so the const/function
+// below are never re-declared (which would be a fatal error).
+if ( defined( 'FORCE_2FA_LOADED' ) ) {
+	return;
+}
+define( 'FORCE_2FA_LOADED', '1.4.0' );
+
 /**
  * Roles to EXCLUDE from forced two-factor.
  *
@@ -58,7 +81,18 @@ if ( defined( 'FORCE_2FA_DISABLE' ) && FORCE_2FA_DISABLE ) {
  * Security rule (see force_2fa_user_is_exempt): a user is exempt ONLY if EVERY
  * role they hold is on this list. A user with both an excluded role and a
  * non-excluded one (e.g. subscriber + editor) is still enforced, so excluding a
- * low-privilege role can never accidentally exempt a privileged account.
+ * low-privilege role can never accidentally exempt a privileged account that
+ * also holds a higher role.
+ *
+ * THREAT MODEL / WARNING: exclusions are configured in code (this constant or
+ * the force_2fa_user_is_exempt filter), which requires filesystem-level access —
+ * a trust level that can already disable 2FA entirely. So exclusions are not an
+ * attacker-facing control; they are an operator convenience. There is no hard
+ * floor protecting privileged accounts: if you exclude a role that a super admin
+ * or administrator holds *as their only role on a site*, that account WILL be
+ * exempted on that site. Choose excluded roles deliberately. To exempt or
+ * re-include a specific account surgically, prefer the force_2fa_user_is_exempt
+ * filter over broad role exclusions.
  *
  * Exclusion means "don't FORCE 2FA" — it does not forbid it. An excluded user
  * who configured their own 2FA keeps it.
