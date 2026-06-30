@@ -1,11 +1,24 @@
 # Force Email Two-Factor (Enforcement)
 
-A single-file WordPress **must-use plugin** that makes two-factor authentication
-mandatory for every user, and locks down the XML-RPC / REST API-login path to a
-named allowlist of service accounts.
+[![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](LICENSE)
+![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759b?logo=wordpress&logoColor=white)
+![PHP](https://img.shields.io/badge/PHP-7.2%2B-777bb4?logo=php&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.5.0-green.svg)
+[![Open in WordPress Playground](https://img.shields.io/badge/WordPress_Playground-Try_it_live-3858e9?logo=wordpress&logoColor=white)][playground]
+
+A WordPress plugin that makes two-factor authentication mandatory for every user,
+and locks down the XML-RPC / REST API-login path to a named allowlist of service
+accounts. On multisite it can be **network-activated or activated per-site**, and
+an optional `mu-loader.php` makes it un-deactivatable.
 
 It builds on the [Two Factor plugin](https://wordpress.org/plugins/two-factor/) —
-that plugin must be installed and active for this to do anything.
+a declared `Requires Plugins` dependency that must be installed and active.
+
+**▶ [Try it live in WordPress Playground][playground]** — boots a multisite with
+the full 2FA stack (Two Factor, WebAuthn, mail logging) already wired up; no local
+install needed. See [`playground/`](playground/) for details.
+
+[playground]: https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/dknauss/force-email-two-factor/main/playground/blueprint.json
 
 ---
 
