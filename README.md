@@ -264,6 +264,40 @@ The plugin checks this constant at load time and registers nothing when it's set
   core's application-password handler at priority 20, so the app-password marker
   is reliably set by the time the decision is made.
 
+- **Self-hosted updates (no WordPress.org, no collisions):** distributed from
+  GitHub, so `force_2fa_bootstrap_self_update()` registers
+  [Plugin Update Checker](https://github.com/YahnisElsts/plugin-update-checker)
+  on `plugins_loaded`. It reads the repository from the **`Update URI`** plugin
+  header, compares the installed `Version` against the latest GitHub **Release**,
+  and offers that release's attached `<slug>.zip` through the normal Dashboard →
+  Updates flow and unattended auto-updates.
+  [`.github/workflows/release.yml`](.github/workflows/release.yml) builds and
+  publishes that zip on every `v*` tag. Self-update is skipped in a working copy
+  under version control (a `.git` present), so a dev clone updates via `git`, not
+  by having WordPress overwrite it with a release zip.
+
+  Two independent guards keep a same-named WordPress.org plugin from ever hijacking
+  the update: WordPress core honours the non-`.org` `Update URI` and declines to
+  serve `.org` updates for the slug, and PUC also excludes this plugin from the
+  wordpress.org update check by default.
+
+  > [!IMPORTANT]
+  > Because updates install straight from GitHub with no WordPress.org review gate,
+  > the release pipeline is this plugin's trust boundary. It is hardened so that
+  > only reviewed code can reach a release: PUC is **vendored** (committed under
+  > `vendor/yahnis-elsts/`, so the exact updater bytes are in-repo and Packagist is
+  > not resolved at release time), workflow **Actions are pinned to full commit
+  > SHAs** (a moved tag can't inject code into the `contents: write` job), and the
+  > release token requests only `contents: write`. Keep branch protection on the
+  > tag/release path and review any change to the release workflow, its actions, or
+  > the vendored updater.
+
+- **Forking:** point the `Update URI` header at your own repository — that single
+  change redirects both the updater and core's update-ownership to your fork.
+  (Leaving it on the upstream repo would auto-update every site back to upstream.)
+  The slug and download-asset name derive from the plugin folder, so only a rename
+  additionally needs the workflow's `PLUGIN_SLUG` updated to match.
+
 ---
 
 ## Requirements & dependencies
@@ -328,6 +362,11 @@ does nothing else.
 - **Mail delivery is part of the security boundary.** If outbound email fails,
   users without a stronger factor can be locked out until mail is fixed or
   `FORCE_2FA_DISABLE` is enabled.
+- **Email passcodes expire.** Two Factor email codes are valid for 15 minutes by
+  default. An expired code is rejected like any invalid code; the user should use
+  **Resend Code** or restart the login to generate a fresh email code. Repeated
+  invalid attempts are handled by the Two Factor plugin's rate limiting and
+  failed-attempt protections.
 - **Only the Two Factor plugin is enforced.** Other 2FA plugins are not affected,
   and they do not satisfy the Two Factor dependency this plugin needs.
 - **Multisite is network-only, and depends on Two Factor being network-active.**
@@ -407,7 +446,11 @@ Before tagging a release:
 - [ ] Run `vendor/bin/phpunit --coverage-text` with PCOV or Xdebug if validating
       local coverage.
 - [ ] Smoke-test at least one real login flow (sign in → email 2FA challenge → in).
-- [ ] Tag the release and publish release notes from the changelog.
+- [ ] Tag the release as `vX.Y.Z` and push the tag. The `Release` workflow verifies
+      the tag matches the `Version` header, builds `force-email-two-factor.zip`
+      (plugin + production `vendor/`), and publishes it as a Release asset — this
+      asset is what Plugin Update Checker serves to installed sites, so a release is
+      not complete until the workflow has published it.
 
 ## License
 
