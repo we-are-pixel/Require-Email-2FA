@@ -289,15 +289,21 @@ The plugin checks this constant at load time and registers nothing when it's set
   > `vendor/yahnis-elsts/`, so the exact updater bytes are in-repo and Packagist is
   > not resolved at release time), workflow **Actions are pinned to full commit
   > SHAs** (a moved tag can't inject code into the `contents: write` job), and the
-  > release token requests only `contents: write`. Keep branch protection on the
+  > release token requests only `contents: write` plus the `id-token`/`attestations`
+  > write scopes for build provenance. Keep branch protection on the
   > tag/release path and review any change to the release workflow, its actions, or
-  > the vendored updater.
+  > the vendored updater. Full hardening guide — GitHub settings, artifact
+  > provenance/checksums, safe forking, incident response — in
+  > [`docs/SUPPLY-CHAIN-SECURITY.md`](docs/SUPPLY-CHAIN-SECURITY.md).
 
 - **Forking:** point the `Update URI` header at your own repository — that single
   change redirects both the updater and core's update-ownership to your fork.
   (Leaving it on the upstream repo would auto-update every site back to upstream.)
   The slug and download-asset name derive from the plugin folder, so only a rename
-  additionally needs the workflow's `PLUGIN_SLUG` updated to match.
+  additionally needs the workflow's `PLUGIN_SLUG` updated to match. A fork inherits
+  none of the upstream repo's branch/tag protection — re-apply it, and never embed a
+  broad token for a private update repo (see
+  [`docs/SUPPLY-CHAIN-SECURITY.md`](docs/SUPPLY-CHAIN-SECURITY.md#4-forking-safely)).
 
 - **Fleet deployment (managed vs. standalone):** the self-updater is on by default
   (standalone sites patch themselves from GitHub Releases). On sites patched by a
@@ -398,6 +404,9 @@ does nothing else.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, test commands, and pull request expectations.
 - See [SUPPORT.md](SUPPORT.md) for support boundaries and the information needed in bug reports.
 - See [SECURITY.md](SECURITY.md) to report vulnerabilities privately.
+- See [docs/SUPPLY-CHAIN-SECURITY.md](docs/SUPPLY-CHAIN-SECURITY.md) for the release
+  trust boundary, the GitHub settings that protect the update repository, how to
+  verify release artifacts, and safe-fork guidance.
 - This project follows a [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
@@ -419,7 +428,7 @@ Tests run on a zero-dependency stub bootstrap (no WordPress install required):
 ```sh
 composer install
 composer test                       # PHPUnit: unit + integration
-composer phpcs                      # PHPCompatibility (7.2+) + WordPress-Extra
+composer phpcs                      # PHPCompatibility (7.2+) + WordPress (full)
 composer phpcbf                     # auto-fix coding-standards issues
 composer check                      # phpcs + tests
 vendor/bin/phpunit --testsuite integration   # one suite
@@ -428,9 +437,12 @@ bash bin/multisite-e2e.sh           # disposable real multisite, network-only gu
 bash bin/update-e2e.sh              # disposable real site, GitHub Release update path
 ```
 
-Coding standards are **WordPress-Extra** (style + security sniffs) plus
-**PHPCompatibility** with `testVersion 7.2-`, scoped to the production files
-(`phpcs.xml.dist`).
+Coding standards are the full **WordPress** standard — Core + Extra + Docs (style,
+security, and documentation sniffs) — plus **PHPCompatibility** with
+`testVersion 7.2-`, scoped to the production files (`phpcs.xml.dist`). The one
+excluded sub-rule (`InlineComment.InvalidEndChar`) is documented inline in the
+ruleset; it conflicts with tool directives (`@codeCoverageIgnore`, `phpcs:`) and the
+intentional commented-out example config.
 
 CI ([GitHub Actions](.github/workflows/ci.yml)) runs on every push and pull
 request:
