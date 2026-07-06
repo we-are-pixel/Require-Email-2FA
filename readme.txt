@@ -4,7 +4,7 @@ Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 6.5
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.10.4
+Stable tag: 1.10.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -215,6 +215,11 @@ bypasses are intentionally narrow: only allowlisted accounts using Application
 Passwords can skip the interactive challenge.
 
 == Changelog ==
+
+= 1.10.5 =
+* Pixel fork: publish a fresh fork-channel release after upstream v1.10.4, keeping
+  Pixel-owned sites on `we-are-pixel/Require-Email-2FA` for self-updates.
+* No change to 2FA enforcement behavior — functionally identical to 1.10.4.
 
 = 1.10.4 =
 * Pixel fork: point the plugin and self-updater at `we-are-pixel/Require-Email-2FA`,
