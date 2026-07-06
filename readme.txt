@@ -4,7 +4,7 @@ Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 6.5
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.10.3
+Stable tag: 1.10.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -196,7 +196,7 @@ If you fork the plugin to serve
 your own sites, point the `Update URI` header at your own repository and re-apply
 the repository protections. Full guide — GitHub settings, artifact verification,
 safe forking, incident response — in `docs/SUPPLY-CHAIN-SECURITY.md`:
-https://github.com/dknauss/Require-Email-2FA/blob/main/docs/SUPPLY-CHAIN-SECURITY.md
+https://github.com/we-are-pixel/Require-Email-2FA/blob/main/docs/SUPPLY-CHAIN-SECURITY.md
 
 = Does this remove a user's authenticator app or hardware key? =
 
@@ -215,6 +215,13 @@ bypasses are intentionally narrow: only allowlisted accounts using Application
 Passwords can skip the interactive challenge.
 
 == Changelog ==
+
+= 1.10.4 =
+* Pixel fork: point the plugin and self-updater at `we-are-pixel/Require-Email-2FA`,
+  so Pixel-owned sites installed from this fork receive updates from the Pixel release
+  channel rather than the upstream `dknauss` repository.
+* Repo polish: badge and Playground links now target the Pixel fork.
+* No change to 2FA enforcement behavior — functionally identical to 1.10.3.
 
 = 1.10.3 =
 * Security tooling: CodeQL Actions analysis now uses SHA-pinned actions and the

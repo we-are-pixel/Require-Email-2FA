@@ -1,7 +1,7 @@
 # Require Email 2FA
 
-[![CI](https://github.com/dknauss/Require-Email-2FA/actions/workflows/ci.yml/badge.svg)](https://github.com/dknauss/Require-Email-2FA/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/dknauss/Require-Email-2FA?sort=semver&label=release)](https://github.com/dknauss/Require-Email-2FA/releases/latest)
+[![CI](https://github.com/we-are-pixel/Require-Email-2FA/actions/workflows/ci.yml/badge.svg)](https://github.com/we-are-pixel/Require-Email-2FA/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/we-are-pixel/Require-Email-2FA?sort=semver&label=release)](https://github.com/we-are-pixel/Require-Email-2FA/releases/latest)
 [![Docs](https://img.shields.io/badge/docs-deployment%20%26%20supply%20chain-3858e9.svg)](docs/DEPLOYMENT.md)
 
 [![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
@@ -9,7 +9,7 @@
 [![Tested up to WordPress 7.0](https://img.shields.io/badge/tested%20up%20to-WordPress%207.0-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/download/)
 [![Requires PHP 7.2+](https://img.shields.io/badge/PHP-7.2%2B-777bb4?logo=php&logoColor=white)](https://www.php.net/supported-versions.php)
 [![Requires Plugin: Two Factor](https://img.shields.io/badge/requires-Two%20Factor-3858e9.svg)](https://wordpress.org/plugins/two-factor/)
-[![Try in WordPress Playground](https://img.shields.io/badge/try-WordPress%20Playground-3858e9?logo=wordpress&logoColor=white)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/dknauss/Require-Email-2FA/main/playground/demo-blueprint.json)
+[![Try in WordPress Playground](https://img.shields.io/badge/try-WordPress%20Playground-3858e9?logo=wordpress&logoColor=white)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/we-are-pixel/Require-Email-2FA/main/playground/demo-blueprint.json)
 
 This is a Multisite compatible, single-purpose, WordPress utility plugin with no admin user interface. It's intended to help site owners and maintainers rapidly roll out and enforce a mandatory two-factor authentication policy on WordPress sites or networks that may have many users — in the simplest and least disruptive way.
 
@@ -28,7 +28,7 @@ Require Email 2FA's dependency on Two Factor is *soft*: the Require Email 2FA pl
 > [!TIP]
 > **▶ [Try it live in WordPress Playground][playground]** — boots a disposable WordPress with this plugin already active and Two Factor *not yet installed*, so you land on the Plugins screen and see the guided **"Install & activate Two Factor"** notice. A handful of sample users (across roles) are created so you can browse profiles. No local install needed; nothing is saved.
 
-[playground]: https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/dknauss/Require-Email-2FA/main/playground/demo-blueprint.json
+[playground]: https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/we-are-pixel/Require-Email-2FA/main/playground/demo-blueprint.json
 
 ---
 

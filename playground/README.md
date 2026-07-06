@@ -10,7 +10,7 @@ blueprints:
 
 ## `demo-blueprint.json` — interactive demo
 
-[**▶ Open it**](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/dknauss/Require-Email-2FA/main/playground/demo-blueprint.json)
+[**▶ Open it**](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/we-are-pixel/Require-Email-2FA/main/playground/demo-blueprint.json)
 
 Boots a disposable WordPress with this plugin already active and **Two Factor not
 yet installed**. You auto-login as `admin` and land on the **Plugins** screen,

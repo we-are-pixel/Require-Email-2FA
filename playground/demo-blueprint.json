@@ -15,7 +15,7 @@
             "path": "/wordpress/wp-content/plugins/force-email-two-factor/force-email-two-factor.php",
             "data": {
                 "resource": "url",
-                "url": "https://raw.githubusercontent.com/dknauss/Require-Email-2FA/main/force-email-two-factor.php"
+                "url": "https://raw.githubusercontent.com/we-are-pixel/Require-Email-2FA/main/force-email-two-factor.php"
             }
         },
         {
