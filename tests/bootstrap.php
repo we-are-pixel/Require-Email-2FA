@@ -82,6 +82,53 @@ function is_network_admin() {
 	return ! empty( $GLOBALS['__force2fa_is_network_admin'] );
 }
 
+// Whether this is a multisite network. Driven by a global so a test can exercise
+// both the single-site and multisite branches (e.g. uninstall.php).
+function is_multisite() {
+	return ! empty( $GLOBALS['__force2fa_is_multisite'] );
+}
+
+// Delete a network/site option. Records the keys deleted so the uninstall test can
+// assert exactly which options were purged, without a real WordPress options store.
+function delete_site_option( $option ) {
+	$GLOBALS['__force2fa_deleted_site_options'][] = $option;
+	return true;
+}
+
+// Clear all scheduled occurrences of a cron hook. Records the hooks cleared (with
+// the current blog id, so the multisite per-site loop is observable) for the
+// uninstall test.
+function wp_clear_scheduled_hook( $hook ) {
+	$GLOBALS['__force2fa_cleared_crons'][] = array(
+		'hook'    => $hook,
+		'blog_id' => $GLOBALS['__force2fa_current_blog_id'] ?? 1,
+	);
+}
+
+// Coerce a value to a non-negative integer (WordPress core helper).
+function absint( $value ) { // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedFunctionFound -- WordPress core stub.
+	return abs( (int) $value );
+}
+
+// Return the network's site IDs. Driven by a global so the multisite uninstall
+// path can be pointed at a specific set of sites.
+function get_sites( $args = array() ) {
+	return $GLOBALS['__force2fa_sites'] ?? array();
+}
+
+// Switch the "current" blog. Records the active blog id so wp_clear_scheduled_hook()
+// above attributes each cleared cron to the right site.
+function switch_to_blog( $blog_id ) {
+	$GLOBALS['__force2fa_current_blog_id'] = (int) $blog_id;
+	return true;
+}
+
+// Restore the "current" blog to the network default (blog 1 in these stubs).
+function restore_current_blog() {
+	$GLOBALS['__force2fa_current_blog_id'] = 1;
+	return true;
+}
+
 // Current-user capability check. Defaults to a fully-capable admin (every cap); a
 // test can set $GLOBALS['__force2fa_user_caps'] to the exact caps the user holds
 // to exercise a capability-limited role (e.g. can activate but not install).
@@ -91,6 +138,78 @@ function current_user_can( $cap ) {
 	}
 	return true;
 }
+
+// --- Notice / install-handler glue stubs --------------------------------------
+// Enough of the WordPress admin surface for the dependency-notice renderers and
+// the one-click install handler to run under output buffering, so the branch that
+// *selects* which notice/label/body to emit is unit-tested (the pure decisions it
+// delegates to are tested separately). Escapers pass through unchanged; URL helpers
+// return deterministic strings so a test can assert the nonce action and target.
+
+// Plugins directory. Points at a per-run temp dir the tests populate, so the
+// on-disk "is Two Factor installed?" check (file_exists) is controllable. The
+// TestCase creates/removes two-factor/two-factor.php under here to toggle state.
+if ( ! defined( 'WP_PLUGIN_DIR' ) ) {
+	define( 'WP_PLUGIN_DIR', sys_get_temp_dir() . '/force2fa-test-plugins' );
+}
+
+function esc_html( $text ) {
+	return $text;
+}
+function esc_html__( $text, $domain = 'default' ) { // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedFunctionFound -- WordPress core stub.
+	return $text;
+}
+function esc_attr( $text ) {
+	return $text;
+}
+function esc_url( $url ) {
+	return $url;
+}
+function admin_url( $path = '' ) {
+	return 'http://example.test/wp-admin/' . $path;
+}
+function network_admin_url( $path = '' ) {
+	return 'http://example.test/wp-admin/network/' . $path;
+}
+function wp_nonce_url( $url, $action = -1 ) {
+	return $url . ( strpos( $url, '?' ) === false ? '?' : '&' ) . '_wpnonce=' . rawurlencode( (string) $action );
+}
+function plugin_basename( $file ) {
+	return basename( dirname( $file ) ) . '/' . basename( $file );
+}
+
+// is_plugin_active_for_network(): driven by a global so the network notices can be
+// pointed at "Two Factor is / isn't network-active". Keyed by plugin file.
+function is_plugin_active_for_network( $plugin ) {
+	return ! empty( $GLOBALS['__force2fa_network_active'][ $plugin ] );
+}
+
+// get_option(): only 'active_plugins' matters here (per-site active list). Driven
+// by a global; defaults to the passed default.
+function get_option( $name, $default_value = false ) {
+	if ( array_key_exists( $name, $GLOBALS['__force2fa_options'] ?? array() ) ) {
+		return $GLOBALS['__force2fa_options'][ $name ];
+	}
+	return $default_value;
+}
+
+// Nonce verification for the install handler. Driven by a global so a test can
+// simulate a bad/missing nonce; defaults to valid.
+function check_admin_referer( $action = -1, $query_arg = '_wpnonce' ) {
+	if ( isset( $GLOBALS['__force2fa_nonce_ok'] ) && ! $GLOBALS['__force2fa_nonce_ok'] ) {
+		throw new \Force2FA_WpDieException( 'nonce check failed' );
+	}
+	return true;
+}
+
+// wp_die(): the plugin's hard stop. Throw so a test can assert the handler bailed
+// (e.g. the capability wall) and capture the message, instead of killing PHP.
+function wp_die( $message = '', $title = '', $args = array() ) {
+	throw new \Force2FA_WpDieException( is_scalar( $message ) ? (string) $message : '' );
+}
+
+/** Thrown by the wp_die()/check_admin_referer() stubs so tests can assert a hard stop. */
+class Force2FA_WpDieException extends \RuntimeException {}
 
 // --- WordPress class stubs ----------------------------------------------------
 
@@ -108,9 +227,11 @@ if ( ! class_exists( 'WP_User' ) ) {
 	}
 }
 
-// Present by default so the enforcement filter takes its append path; the
-// class-absent guard is exercised manually rather than in unit tests.
-if ( ! class_exists( 'Two_Factor_Email' ) ) {
+// Present by default so the enforcement filter takes its append path. The
+// class-absent guard in force_2fa_dependency_met() is exercised by the separate
+// bootstrap-no-two-factor.php run, which defines FORCE2FA_TEST_NO_TWO_FACTOR to
+// suppress both Two Factor stubs and simulate the plugin being inactive/removed.
+if ( ! defined( 'FORCE2FA_TEST_NO_TWO_FACTOR' ) && ! class_exists( 'Two_Factor_Email' ) ) {
 	class Two_Factor_Email {}
 }
 
@@ -120,7 +241,7 @@ if ( ! class_exists( 'Two_Factor_Email' ) ) {
 // primary provider is the first enabled one, and a user "uses 2FA" when a primary
 // provider exists. We feed providers through the plugin's own filter callback so
 // the test exercises real enforcement behaviour, not a reimplementation of it.
-if ( ! class_exists( 'Two_Factor_Core' ) ) {
+if ( ! defined( 'FORCE2FA_TEST_NO_TWO_FACTOR' ) && ! class_exists( 'Two_Factor_Core' ) ) {
 	class Two_Factor_Core {
 		/**
 		 * Registered providers, keyed by class name. Defaults to Email present (the
