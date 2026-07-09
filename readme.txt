@@ -216,7 +216,7 @@ If you fork the plugin to serve
 your own sites, point the `Update URI` header at your own repository and re-apply
 the repository protections. Full guide — GitHub settings, artifact verification,
 safe forking, incident response — in `docs/SUPPLY-CHAIN-SECURITY.md`:
-https://github.com/dknauss/Require-Email-2FA/blob/main/docs/SUPPLY-CHAIN-SECURITY.md
+https://github.com/we-are-pixel/Require-Email-2FA/blob/main/docs/SUPPLY-CHAIN-SECURITY.md
 
 = Does this remove a user's authenticator app or hardware key? =
 
@@ -255,20 +255,26 @@ from this API-login gate.
 * No change to enforcement behavior — functionally identical to 1.10.5.
 
 = 1.10.5 =
-* Uninstall cleanup: deleting the plugin now removes the only persistent data it
-  can leave behind — the bundled Plugin Update Checker's cached-update option
-  (`external_updates-*`) and its update-check cron event (`puc_cron_check_updates-*`)
-  — on every site, including multisite. Deactivating already stopped all enforcement
-  immediately; the plugin still stores no options, user meta, or transients of its own.
-* Tests: added single-site and multisite end-to-end coverage asserting uninstall
-  leaves no Plugin Update Checker option or cron behind.
-* No change to enforcement behavior — functionally identical to 1.10.4.
+* Pixel fork: publish a fresh fork-channel release after upstream v1.10.4, keeping
+  Pixel-owned sites on `we-are-pixel/Require-Email-2FA` for self-updates.
+* No change to 2FA enforcement behavior — functionally identical to 1.10.4.
+* Merged from upstream: uninstall cleanup — deleting the plugin now removes the
+  only persistent data it can leave behind, the bundled Plugin Update Checker's
+  cached-update option (`external_updates-*`) and its update-check cron event
+  (`puc_cron_check_updates-*`), on every site, including multisite. Deactivating
+  already stopped all enforcement immediately; the plugin still stores no
+  options, user meta, or transients of its own.
+* Merged from upstream: tests — added single-site and multisite end-to-end
+  coverage asserting uninstall leaves no Plugin Update Checker option or cron
+  behind.
+* No change to enforcement behavior beyond the uninstall cleanup above.
 
 = 1.10.4 =
-* Repo polish: added linked repository status badges for CI, latest release, docs,
-  license, WordPress/PHP requirements, Tested up to WordPress, Two Factor dependency,
-  and WordPress Playground.
-* No change to enforcement behavior — functionally identical to 1.10.3.
+* Pixel fork: point the plugin and self-updater at `we-are-pixel/Require-Email-2FA`,
+  so Pixel-owned sites installed from this fork receive updates from the Pixel release
+  channel rather than the upstream `dknauss` repository.
+* Repo polish: badge and Playground links now target the Pixel fork.
+* No change to 2FA enforcement behavior — functionally identical to 1.10.3.
 
 = 1.10.3 =
 * Security tooling: CodeQL Actions analysis now uses SHA-pinned actions and the

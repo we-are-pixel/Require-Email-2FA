@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:      Require Email 2FA
- * Plugin URI:       https://github.com/dknauss/Require-Email-2FA
- * Update URI:       https://github.com/dknauss/Require-Email-2FA
+ * Plugin URI:       https://github.com/we-are-pixel/Require-Email-2FA
+ * Update URI:       https://github.com/we-are-pixel/Require-Email-2FA
  * Description:      Requires the Two Factor plugin and makes emailed 2FA the default, required login factor for all users.
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
