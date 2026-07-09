@@ -19,7 +19,7 @@ Require Email 2FA imposes three requirements site- or network-wide:
 2. All users must use Two Factor to log in. (Exceptions can be set with a constant or filter.)
 3. Users who do not have a different method selected in their two-factor settings will receive time-based, one-time passcodes by email.
 
-The plugin also locks down the XML-RPC / REST API-login path. (A named allowlist of service accounts can be added with a constant or filter.)
+The plugin also hardens the XML-RPC login path with a named allowlist of service accounts (added via a constant or filter). Note this allowlist governs XML-RPC, not REST — see **Restricts XML-RPC logins** below. (The same hardening will be applied to REST in a future version.)
 
 On multisite the plugin is **network-only** (Network Activate; per-site activation is blocked), and an optional `mu-loader.php` file can be moved to the `/mu-plugins` folder to make it un-deactivatable within the WordPress admin interface.
 
@@ -43,13 +43,16 @@ Require Email 2FA's dependency on Two Factor is *soft*: the Require Email 2FA pl
    up a stronger factor (TOTP, hardware key / WebAuthn) keep it as their primary
    method, and **backup codes remain available** as a recovery path.
 
-2. **Restricts API logins.** XML-RPC and REST logins bypass the interactive 2FA
-   screen. This plugin allows an API login to skip 2FA **only** when *both*:
+2. **Restricts XML-RPC logins.** Non-interactive logins bypass the interactive
+   2FA screen. This plugin allows such a login to skip 2FA **only** when *both*:
    - the account is on an explicit allowlist, **and**
    - the request authenticated with an **Application Password** (not the real
      login password).
 
-   Everyone else is denied on the API path.
+   Everyone else is denied.
+
+> [!NOTE]
+> **Scope — this allowlist governs XML-RPC, not the REST API.** Two Factor's only API-login gate runs on the `authenticate` filter, which XML-RPC logins pass through. REST requests authenticated with an Application Password set the current user via WordPress core's `determine_current_user` path (`wp_validate_application_password`) and never touch that filter — so Two Factor, and therefore this allowlist, does **not** gate them. Any account with allowlist. To restrict REST access, scope each account's role/capabilities (Application Passwords inherit the user's caps), disable Application Passwords for users who shouldn't have them (`wp_is_application_passwords_available_for_user`), or add a REST-layer gate (`rest_authentication_errors`).
 
 > [!IMPORTANT]
 > For security hardening purposes, it's strongly recommended that you set up Require Email 2FA as a mu-plugin if you establish user role exclusions and/or an API user allowlist.
@@ -121,18 +124,26 @@ a mail outage can lock out every user who has no stronger factor.
 
 Before enabling enforcement on a production site:
 
-- [ ] Confirm SMTP / transactional email delivery works for real user mailboxes.
-- [ ] Keep at least one known-good administrator session open during rollout.
-- [ ] Generate and safely store backup codes for administrator accounts.
-- [ ] Test the login flow with one non-admin user before broad activation.
-- [ ] Choose the activation mode deliberately: normal single-site, Network Activate
-      for multisite-wide enforcement, or the optional `mu-loader.php`.
-- [ ] Identify any REST/XML-RPC service accounts up front and decide whether each
-      one should be allowlisted for Application Password authentication.
-- [ ] If the site uses SSO/SAML/OIDC/OAuth/LDAP/Jetpack SSO, test both the SSO
-      callback and the direct `wp-login.php` path on staging. Do not assume this
-      plugin enforces MFA for SSO; enforce MFA at the identity provider.
-- [ ] Document the `FORCE_2FA_DISABLE` kill switch in your incident runbook.
+- [ ] **Email is the second factor, so email must work — or people get locked out.**
+      Confirm SMTP / transactional email delivery works for real user mailboxes.
+- [ ] **Keep a way back in while you roll out.** Keep at least one known-good
+      administrator session open during rollout.
+- [ ] **Have a recovery path if mail fails.** Generate and safely store backup codes
+      for administrator accounts.
+- [ ] **Prove the flow before you trust it.** Test the login flow with one non-admin
+      user before broad activation.
+- [ ] **Decide how enforcement turns on.** Choose the activation mode deliberately:
+      normal single-site, Network Activate for multisite-wide enforcement, or the
+      optional `mu-loader.php`.
+- [ ] **Plan for integrations that can't read an email code.** Identify any XML-RPC
+      service accounts up front and decide whether each should be allowlisted for
+      Application Password authentication. (The allowlist covers XML-RPC, not REST —
+      scope REST integrations by role/capability instead; see **Security model**.)
+- [ ] **Don't assume SSO logins are covered.** If the site uses SSO/SAML/OIDC/OAuth/
+      LDAP/Jetpack SSO, test both the SSO callback and the direct `wp-login.php` path
+      on staging, and enforce MFA at the identity provider.
+- [ ] **Write down the escape hatch before you need it.** Document the
+      `FORCE_2FA_DISABLE` kill switch in your incident runbook.
 
 ---
 
@@ -175,6 +186,13 @@ exempt on that site. Choose excluded roles deliberately, and prefer the
 Exclusion means "don't *force* 2FA"; it doesn't forbid it. An excluded user who
 set up their own 2FA keeps it.
 
+> **Excluding a role also removes those accounts from the API-login hardening.**
+> Two Factor only gates the API login of a user it considers "using 2FA." An
+> excluded account with no other factor configured is not using 2FA, so Two
+> Factor never gates its XML-RPC/REST logins — the API-login allowlist does not
+> apply to it. Don't exclude a role for accounts you also expect the API allowlist
+> to govern.
+
 For one-off cases (e.g. exempt a single user ID rather than a whole role), use the
 `force_2fa_user_is_exempt` filter instead of editing the role list:
 
@@ -191,6 +209,12 @@ add_filter( 'force_2fa_user_is_exempt', function ( $exempt, $user ) {
 
 Edit the `FORCE_2FA_API_LOGIN_ALLOWLIST` constant in the plugin file. Each entry
 is either a numeric **user ID** or a **user_login** (case-insensitive):
+
+> **Numeric entries always match by user ID.** An entry made of digits (e.g.
+> `'1001'`) is compared against the user ID only — never against `user_login`. If a
+> service account's `user_login` happens to be all digits, it cannot be allowlisted
+> by that login (and the numeric value would match whichever account holds that
+> *ID* instead). Allowlist such accounts by their user ID, which is unambiguous.
 
 ```php
 const FORCE_2FA_API_LOGIN_ALLOWLIST = array(
@@ -249,6 +273,19 @@ The plugin checks this constant at load time and registers nothing when it's set
 
 ---
 
+## Uninstalling and data footprint
+
+The plugin is effectively stateless: it stores **no** options, user meta, or transients of its own. All enforcement happens through runtime filters and actions on the Two Factor plugin's hooks, so it holds nothing that could outlive it or interfere with other login flows.
+
+- **Deactivating** unhooks everything immediately — 2FA enforcement stops that instant, with no residue. If self-update is active, the bundled Plugin Update Checker also clears its update-check cron on deactivation.
+- **Deleting (uninstall)** runs `uninstall.php`, which purges the only persistent footprint the plugin can create — the Plugin Update Checker's cached-update option (`external_updates-<slug>`) and its update-check cron event (`puc_cron_check_updates-<slug>`), across all sites on multisite. Nothing is left in the database.
+
+Nothing this plugin creates touches an SSO/SAML/OIDC/OAuth/LDAP integration's configuration or session state, so removing it cannot break those login paths. See [Compatibility & interaction with other 2FA setups](#compatibility--interaction-with-other-2fa-setups) for how it behaves alongside SSO while active.
+
+> **Note:** if you enabled the optional [“cannot be deactivated” mode](#optional-cannot-be-deactivated-mode-mu-loader), delete `wp-content/mu-plugins/mu-loader.php` as well — a must-use plugin is not removed by deactivating or deleting the plugin from the Plugins screen.
+
+---
+
 ## How it works (for maintainers)
 
 - **Forcing 2FA:** filters `two_factor_enabled_providers_for_user` to add
@@ -261,11 +298,14 @@ The plugin checks this constant at load time and registers nothing when it's set
   filter no-ops safely (never stripping an existing factor) if Two Factor is
   inactive, and does not append a provider Two Factor can't resolve.
 
-- **API logins:** filters `two_factor_user_api_login_enable`. The plugin's own
-  default for this filter is `did_action( 'application_password_did_authenticate' )`,
-  i.e. it already allows API logins without 2FA only via Application Passwords.
-  This plugin recomputes the decision as *(this account used an Application
-  Password this request) AND (user is allowlisted)*. The account is captured on
+- **API logins:** filters `two_factor_user_api_login_enable`. Two Factor's default
+  value for this filter is `did_action( 'application_password_did_authenticate' )`,
+  i.e. it already allows an API login to skip 2FA only when an Application Password
+  authenticated the request. This plugin recomputes the decision as *(this account
+  used an Application Password this request) AND (user is allowlisted)*. This gate
+  runs only on the `authenticate` path (XML-RPC); REST Application Password logins
+  bypass it via core's `determine_current_user` and are not gated (see the API
+  hardening note under Security model). The account is captured on
   `application_password_did_authenticate` — fired by core while authenticating the
   request — and Two Factor evaluates `two_factor_user_api_login_enable` afterward,
   during its API-login gating, so the marker is reliably set by the time the
@@ -386,6 +426,74 @@ does nothing else.
 
 ---
 
+## Security model
+
+This section states plainly what the plugin **does** guarantee, what it **does
+not**, and how to configure it so those guarantees hold. Read it before you rely on
+the plugin as a control.
+
+### What it enforces
+
+- **Interactive logins (`wp-login.php`): every non-exempt user must clear a second
+  factor.** Email is added as a universal, no-setup floor, so a user who never
+  configured 2FA is still challenged. Users who set up a stronger factor (TOTP,
+  WebAuthn) keep it as their primary method; the floor never replaces it.
+- **XML-RPC logins: a real-password login by a 2FA-enforced user is denied.**
+  WordPress's interactive challenge can't run over the API, so Two Factor blocks
+  the API login instead — unless the request used an Application Password.
+- **XML-RPC Application Password logins are narrowed to an allowlist.** By default
+  Two Factor lets *any* account skip 2FA over the API with an Application Password;
+  this plugin tightens that so a login skips the challenge only when the account is
+  **both** on `FORCE_2FA_API_LOGIN_ALLOWLIST` **and** authenticating with an
+  Application Password. Everything else on the XML-RPC path is denied.
+
+### What it does NOT enforce (know these boundaries)
+
+- **REST API Application Password logins are not gated.** Two Factor's only
+  API-login gate runs on the `authenticate` filter; REST requests authenticated
+  with an Application Password set the current user via WordPress core's
+  `determine_current_user` path and never reach that filter. So neither Two Factor
+  nor this allowlist restricts them: **any account that can create an Application
+  Password can authenticate over the REST API with its own capabilities**,
+  allowlisted or not. This is a defense-in-depth gap, not a new hole — Application
+  Passwords are a core feature that behaves this way with or without this plugin.
+  Closing it (making the allowlist cover REST too) is on the roadmap:
+  [#41](https://github.com/dknauss/Require-Email-2FA/issues/41).
+- **Excluding a role opts those accounts out of the API-login gate as well.** An
+  excluded account with no other factor isn't "using 2FA," so Two Factor never
+  gates *any* of its logins — XML-RPC included. Exclusion is broader than "don't
+  force the email step."
+- **It does not enforce MFA inside external identity providers.** SSO/SAML/OIDC/
+  OAuth/LDAP/Jetpack SSO logins that bypass `wp-login.php` are the identity
+  provider's responsibility; enforce MFA there.
+- **Email is a floor, and email is weaker than TOTP/WebAuthn.** It exists so
+  *everyone* has a second factor with zero setup, not because it is the strongest
+  option. Encourage privileged users to configure a stronger factor.
+
+### How to use it properly
+
+- **Give every account the least privilege it needs — this is the real REST
+  control.** Because the allowlist does not gate REST, an integration's blast
+  radius over REST is whatever its role allows. Scope service accounts to the
+  minimum capabilities, and turn off Application Passwords for users who shouldn't
+  have them (filter `wp_is_application_passwords_available_for_user`).
+- **Keep the API allowlist minimal, and prefer user IDs.** Add only accounts that
+  genuinely need non-interactive XML-RPC access, and remove them when the
+  integration is retired. Numeric entries always match by user **ID** (a numeric
+  `user_login` can't be allowlisted by login — use the ID).
+- **Choose exclusions deliberately.** Excluding a role removes it from *both*
+  forced 2FA and the API-login gate; never exclude a role a privileged account
+  holds as its only role. Prefer the `force_2fa_user_is_exempt` filter for one-off
+  accounts.
+- **Keep a break-glass path.** Keep a known-good admin session or printed backup
+  codes on hand, and document the `FORCE_2FA_DISABLE` kill switch in your incident
+  runbook — a mail outage can otherwise lock out everyone without a stronger factor.
+- **Make enforcement un-disablable where it matters.** If you configure exclusions
+  or an allowlist, install the `mu-loader.php` so the plugin can't be turned off
+  from the admin UI (see *"cannot be deactivated" mode* above).
+
+---
+
 ## Known limitations
 
 - **Mail delivery is part of the security boundary.** If outbound email fails,
@@ -402,8 +510,13 @@ does nothing else.
   Per-site activation is blocked; but even network-activated, a true network-wide
   guarantee requires the Two Factor plugin to *also* be network-active (the
   Network Admin notice warns when it isn't).
-- **API bypasses are intentionally narrow.** XML-RPC/REST logins can skip the
+- **The API allowlist governs XML-RPC, not REST.** An XML-RPC login can skip the
   interactive challenge only for allowlisted accounts using Application Passwords.
+  REST Application Password logins are **not** gated by Two Factor (they
+  authenticate via core's `determine_current_user` path), so the allowlist does
+  not restrict them — scope REST access via roles/capabilities instead. See the
+  **Security model** section above. Extending the allowlist to cover REST is on the
+  roadmap: [#41](https://github.com/dknauss/Require-Email-2FA/issues/41).
 - **Email can be weaker than TOTP/WebAuthn.** This plugin uses Email as a universal
   no-setup floor while preserving stronger factors users have already configured.
 
@@ -441,7 +554,7 @@ composer install
 composer test                       # PHPUnit: unit + integration
 composer phpcs                      # PHPCompatibility (7.2+) + WordPress (full)
 composer phpcbf                     # auto-fix coding-standards issues
-composer check                      # phpcs + tests
+composer check                      # phpcs + phpstan + all tests
 vendor/bin/phpunit --testsuite integration   # one suite
 vendor/bin/phpunit --coverage-text  # coverage (needs Xdebug or PCOV)
 bash bin/multisite-e2e.sh           # disposable real multisite, network-only guard

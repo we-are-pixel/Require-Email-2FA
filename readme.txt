@@ -4,7 +4,7 @@ Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 6.5
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.10.5
+Stable tag: 1.10.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -29,11 +29,14 @@ It does two things:
    their primary method, and backup codes remain available as a recovery path.
    Enforcement can be scoped with per-role exclusions.
 
-2. **Restricts API logins.** XML-RPC and REST logins bypass the interactive 2FA
-   screen. This plugin permits an API login to skip 2FA only when both the
+2. **Restricts XML-RPC logins.** Non-interactive logins bypass the interactive
+   2FA screen. This plugin permits such a login to skip 2FA only when both the
    account is on an explicit allowlist and the request authenticated with an
-   Application Password (never the real login password). Everyone else is denied
-   on the API path.
+   Application Password (never the real login password); everyone else is denied.
+   Scope note: this allowlist governs XML-RPC, not REST. REST Application Password
+   logins authenticate via WordPress core's determine_current_user path and are
+   never gated by Two Factor, so the allowlist does not restrict them — limit REST
+   access via each account's role/capabilities instead. See the FAQ.
 
 = Plugin dependencies =
 
@@ -81,15 +84,21 @@ rollout, since email becomes the required factor for users with no stronger one.
 
 Before production activation:
 
-* Confirm SMTP / transactional email delivery works.
-* Keep a known-good administrator session open.
-* Generate and safely store administrator backup codes.
-* Test one non-admin login before broad rollout.
-* Choose the right activation mode: single-site, Network Activate, or `mu-loader.php`.
-* Identify REST/XML-RPC service accounts and decide whether they need allowlisting.
-* If the site uses SSO/SAML/OIDC/OAuth/LDAP/Jetpack SSO, test both SSO and direct
-  `wp-login.php` on staging; enforce MFA at the identity provider.
-* Document the `FORCE_2FA_DISABLE` kill switch in your incident runbook.
+* **Email is the second factor, so email must work, or people get locked out.**
+  Confirm SMTP / transactional email delivery works.
+* **Keep a way back in while you roll out.** Keep a known-good administrator session open.
+* **Have a recovery path if mail fails.** Generate and safely store administrator backup codes.
+* **Prove the flow before you trust it.** Test one non-admin login before broad rollout.
+* **Decide how enforcement turns on.** Choose the right activation mode: single-site,
+  Network Activate, or `mu-loader.php`.
+* **Plan for integrations that can't read an email code.** Identify XML-RPC service
+  accounts and decide whether they need allowlisting. (The allowlist covers XML-RPC,
+  not REST; scope REST integrations by role/capability instead.)
+* **Don't assume SSO logins are covered.** If the site uses SSO/SAML/OIDC/OAuth/LDAP/
+  Jetpack SSO, test both SSO and direct `wp-login.php` on staging; enforce MFA at the
+  identity provider.
+* **Write down the escape hatch before you need it.** Document the `FORCE_2FA_DISABLE`
+  kill switch in your incident runbook.
 
 == Frequently Asked Questions ==
 
@@ -131,11 +140,22 @@ add_filter( 'force_2fa_excluded_roles', function () {
 } );
 `
 
-= How do I let an integration log in over the REST API or XML-RPC? =
+= How do I let an integration log in over XML-RPC? =
 
 Add its user ID or login to `FORCE_2FA_API_LOGIN_ALLOWLIST`, and have it
-authenticate with an Application Password. A real-password API login is always
+authenticate with an Application Password. A real-password XML-RPC login is always
 denied, even for allowlisted accounts.
+
+Important: this allowlist governs XML-RPC, not the REST API. Two Factor's only
+API-login gate runs on the `authenticate` filter, which XML-RPC uses; REST
+Application Password logins authenticate via WordPress core's
+`determine_current_user` path and never reach that gate, so the allowlist does not
+restrict them. Any account with an Application Password can authenticate over REST
+regardless of the allowlist. To limit REST access, give each account the least
+role/capabilities it needs (Application Passwords inherit the user's caps), turn
+off Application Passwords for users who shouldn't have them
+(`wp_is_application_passwords_available_for_user`), or add a `rest_authentication_errors`
+gate.
 
 You can also override the effective allowlist without editing this plugin:
 
@@ -210,16 +230,44 @@ without a stronger factor can be locked out until mail is fixed or
 `FORCE_2FA_DISABLE` is enabled. This plugin only enforces the Two Factor plugin
 and does not integrate with other 2FA plugins or enforce MFA inside external SSO
 providers. On multisite it is network-only (per-site activation is blocked); a true
-network-wide guarantee also depends on Two Factor itself being network-active. API
-bypasses are intentionally narrow: only allowlisted accounts using Application
-Passwords can skip the interactive challenge.
+network-wide guarantee also depends on Two Factor itself being network-active. The
+API-login allowlist governs XML-RPC only: an XML-RPC login can skip the interactive
+challenge only for allowlisted accounts using Application Passwords, while REST
+Application Password logins are not gated by Two Factor and are not restricted by
+the allowlist (scope REST access via roles/capabilities). Extending the allowlist to
+cover REST is on the roadmap (issue #41). Excluding a role also removes those accounts
+from this API-login gate.
 
 == Changelog ==
+
+= 1.10.6 =
+* Docs: added a "Security model" section stating plainly what the plugin enforces
+  and — importantly — what it does not. The API-login allowlist governs XML-RPC,
+  NOT the REST API: REST Application Password logins authenticate via WordPress
+  core's determine_current_user path and are not gated by Two Factor or the
+  allowlist. Corrected the README/readme where they implied REST was covered, added
+  guidance to scope REST access via roles/capabilities, and added plain-language
+  lead sentences to the rollout checklist.
+* Tests: substantially expanded unit and end-to-end coverage — the Two-Factor-absent
+  fail-safe, dependency-notice rendering, install-handler guards, the emergency
+  kill switch and mu-loader behavior, the XML-RPC API-login allowlist, and the
+  one-click installer — plus a combined-coverage floor check in CI.
+* No change to enforcement behavior — functionally identical to 1.10.5.
 
 = 1.10.5 =
 * Pixel fork: publish a fresh fork-channel release after upstream v1.10.4, keeping
   Pixel-owned sites on `we-are-pixel/Require-Email-2FA` for self-updates.
 * No change to 2FA enforcement behavior — functionally identical to 1.10.4.
+* Merged from upstream: uninstall cleanup — deleting the plugin now removes the
+  only persistent data it can leave behind, the bundled Plugin Update Checker's
+  cached-update option (`external_updates-*`) and its update-check cron event
+  (`puc_cron_check_updates-*`), on every site, including multisite. Deactivating
+  already stopped all enforcement immediately; the plugin still stores no
+  options, user meta, or transients of its own.
+* Merged from upstream: tests — added single-site and multisite end-to-end
+  coverage asserting uninstall leaves no Plugin Update Checker option or cron
+  behind.
+* No change to enforcement behavior beyond the uninstall cleanup above.
 
 = 1.10.4 =
 * Pixel fork: point the plugin and self-updater at `we-are-pixel/Require-Email-2FA`,
@@ -309,7 +357,7 @@ Passwords can skip the interactive challenge.
 * Admin UX: the dependency notices show the one-click install button only when the
   current user holds every capability its handler needs; otherwise they inform
   without an action that would be denied.
-* Release workflow: run the PHPCS + PHPUnit gate against the tagged commit before
+* Release workflow: run the PHPCS + PHPStan + PHPUnit gate against the tagged commit before
   building and publishing the update asset.
 * Self-updates from a git working copy are skipped (a `.git` present), so a dev
   clone is not overwritten by a release zip.
