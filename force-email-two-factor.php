@@ -6,7 +6,7 @@
  * Description:      Requires the Two Factor plugin and makes emailed 2FA the default, required login factor for all users.
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
- * Version:          1.10.5
+ * Version:          1.10.6
  * Requires PHP:     7.2
  * License:          GPL-2.0-or-later
  * License URI:      https://www.gnu.org/licenses/gpl-2.0.html
@@ -111,7 +111,7 @@ if ( defined( 'FORCE_2FA_DISABLE' ) && FORCE_2FA_DISABLE ) {
 if ( defined( 'FORCE_2FA_LOADED' ) ) {
 	return;
 }
-define( 'FORCE_2FA_LOADED', '1.10.5' );
+define( 'FORCE_2FA_LOADED', '1.10.6' );
 // @codeCoverageIgnoreEnd
 
 /**
@@ -512,22 +512,38 @@ function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
  * 2FA-enabled user. Our enforcement filter above makes every user 2FA-enabled,
  * so that default applies site-wide.
  *
- * What THIS allowlist adds: the plugin's default still lets ANY user log in via
- * the API as long as they present an Application Password. We tighten that to a
- * named set of service accounts — non-human integrations that cannot present an
- * emailed code, e.g.:
+ * What THIS allowlist adds: on the authenticate path (XML-RPC — see SCOPE below),
+ * the plugin's default still lets ANY user log in as long as they present an
+ * Application Password. We tighten that to a named set of service accounts —
+ * non-human integrations that cannot present an emailed code, e.g.:
  *
- *   - Headless / JAMstack frontends reading content over the REST API
- *   - CI/CD or deploy pipelines hitting authenticated REST endpoints
- *   - Automation platforms (Zapier / Make / n8n / IFTTT) posting via REST
- *   - Backup, migration, or uptime-monitoring tools
- *   - The Jetpack / WordPress mobile apps (XML-RPC)
+ *   - The Jetpack / WordPress mobile apps and other XML-RPC clients
+ *   - Remote-publishing / management tools that authenticate over XML-RPC
+ *   - Backup, migration, or uptime-monitoring tools using XML-RPC
+ *
+ * (REST-only integrations — headless frontends, CI/CD hitting REST endpoints,
+ * Zapier/Make/n8n — are NOT governed by this allowlist; see SCOPE below.)
  *
  * The resulting policy is the INTERSECTION of two conditions (see filter below):
  *   (a) the account is on this allowlist, AND
  *   (b) THIS request authenticated with an Application Password.
  * So an allowlisted account that tries its real login password over the API is
  * still denied, and a non-allowlisted account is denied even with an app password.
+ *
+ * SCOPE — this allowlist governs the 'authenticate'-filter path, NOT REST:
+ * Two Factor's only API-login gate is filter_authenticate() on the 'authenticate'
+ * filter, and it is the sole consumer of the 'two_factor_user_api_login_enable'
+ * filter this plugin hooks. XML-RPC logins (and other non-REST logins) run through
+ * wp_authenticate() and hit that gate, so the allowlist DOES constrain them. REST
+ * API requests authenticated with an Application Password, however, set the current
+ * user via core's 'determine_current_user' path (wp_validate_application_password)
+ * and never touch the 'authenticate' chain — so Two Factor does not gate them and
+ * this filter is never consulted. Consequently the allowlist does NOT restrict which
+ * accounts may use Application Passwords over the REST API. To limit REST access,
+ * scope each service account's role/capabilities (Application Passwords inherit the
+ * user's caps) or add a REST-layer control (e.g. a 'rest_authentication_errors' or
+ * 'wp_is_application_passwords_available_for_user' gate). The XML-RPC allowlist
+ * behavior is covered end-to-end by bin/api-login-e2e.sh.
  *
  * Each entry is EITHER a numeric user ID (int or numeric string) OR a user_login
  * (matched case-insensitively). Prefer IDs — they don't change if a login is
@@ -662,14 +678,12 @@ function force_2fa_filter_api_login_enable( $enable, $user ) {
 	// (a) ...and only for named service accounts.
 	return force_2fa_user_is_api_allowlisted( $user );
 }
-// The notice and the one-click installer are admin glue: they call WordPress
-// admin/upgrader APIs that the zero-dependency unit bootstrap does not stub, and
-// are only ever invoked through the admin hooks (never at load), so they cannot
-// fatally a unit run. Their behaviour is exercised by the Playground integration
-// test (a real activation with Two Factor absent), mirroring the load-time guards
-// above. The pure decisions they delegate to — force_2fa_should_nag() and
-// force_2fa_required_install_caps() — are unit-tested directly.
-// @codeCoverageIgnoreStart
+// The dependency-notice renderers below select which notice/label/body to emit and
+// are unit-tested with a stubbed admin surface (see tests/DependencyNoticeTest.php
+// and tests/DependencyNoticeAbsentTest.php). The genuinely untestable spans — the
+// activation-guard glue and the one-click installer's upgrader body, which call
+// WordPress admin/upgrader APIs the zero-dependency bootstrap does not stub — carry
+// their own narrower @codeCoverageIgnore markers and are exercised by the E2E jobs.
 
 /**
  * Whether the current user can complete the one-click dependency install/activate.
@@ -877,6 +891,9 @@ function force_2fa_network_dependency_notice() {
 	}
 }
 
+// @codeCoverageIgnoreStart
+// Glue-only: the pure decision is force_2fa_activation_blocked() (unit-tested); the
+// deactivate_plugins()/wp_die() rollback is exercised by bin/multisite-e2e.sh.
 /**
  * Refuse per-site activation on multisite (this plugin is network-only).
  *
@@ -909,6 +926,7 @@ function force_2fa_block_single_site_activation( $network_wide ) {
 		array( 'back_link' => true )
 	);
 }
+// @codeCoverageIgnoreEnd
 
 /**
  * Handle the one-click "Install & activate Two Factor" action.
@@ -935,6 +953,10 @@ function force_2fa_handle_install_two_factor() {
 		}
 	}
 
+	// Upgrader body: WordPress admin/upgrader APIs the unit bootstrap does not stub.
+	// The front gate above (nonce + capability wall) is unit-tested; this install/
+	// activate path is exercised by the Playground install-handler E2E.
+	// @codeCoverageIgnoreStart
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 	require_once ABSPATH . 'wp-admin/includes/misc.php';
 	require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -986,6 +1008,7 @@ function force_2fa_handle_install_two_factor() {
 	wp_safe_redirect( $network ? network_admin_url( 'plugins.php' ) : admin_url( 'plugins.php' ) );
 	exit;
 }
+// @codeCoverageIgnoreEnd
 
 /**
  * Keep the dependency notice honest when Two Factor is deleted via the AJAX "Delete".
@@ -1046,7 +1069,6 @@ function force_2fa_enqueue_notice_refresh( $hook ) {
 		. '});'
 	);
 }
-// @codeCoverageIgnoreEnd
 
 /**
  * Get — or, from the bootstrap, record — the wired Plugin Update Checker instance.
@@ -1241,6 +1263,14 @@ function force_2fa_bootstrap_self_update() {
 	// a git worktree, where .git is a file) is updated with `git pull`, and letting
 	// WordPress replace it with a release zip would clobber the checkout. A release
 	// build carries no .git, so real installs are unaffected.
+	//
+	// SCOPE: this only detects a .git INSIDE the plugin folder. A deployment that
+	// git-tracks a parent directory (all of wp-content, or the whole site) has no
+	// .git here, so this guard does not fire and self-update stays on — a release
+	// zip could then overwrite the git-managed plugin. For centrally-managed or
+	// parent-tracked deployments, disable self-update explicitly with
+	// FORCE_2FA_DISABLE_SELF_UPDATE (see docs/DEPLOYMENT.md) rather than relying on
+	// this per-folder .git check.
 	if ( file_exists( __DIR__ . '/.git' ) ) {
 		return;
 	}
