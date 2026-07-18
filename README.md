@@ -166,7 +166,7 @@ a factor before they can use the site.
 > same first-run flow as a non-admin. Nothing is saved; blocking mode stays **off** in a
 > normal install — the demo enables it only to showcase the feature.
 
-[blocking-playground]: https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/dknauss/Require-Email-2FA/main/playground/blocking-mode-blueprint.json
+[blocking-playground]: https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/we-are-pixel/Require-Email-2FA/main/playground/blocking-mode-blueprint.json
 
 Default is **off**. Enable it in `wp-config.php`:
 
