@@ -1,6 +1,7 @@
 # Require Email 2FA
 
 [![CI](https://github.com/we-are-pixel/Require-Email-2FA/actions/workflows/ci.yml/badge.svg)](https://github.com/we-are-pixel/Require-Email-2FA/actions/workflows/ci.yml)
+[![Coverage floor: 90%](https://img.shields.io/badge/coverage%20floor-%E2%89%A590%25-brightgreen.svg)](https://github.com/we-are-pixel/Require-Email-2FA/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/we-are-pixel/Require-Email-2FA?sort=semver&label=release)](https://github.com/we-are-pixel/Require-Email-2FA/releases/latest)
 [![Docs](https://img.shields.io/badge/docs-deployment%20%26%20supply%20chain-3858e9.svg)](docs/DEPLOYMENT.md)
 
@@ -630,6 +631,9 @@ composer check                      # phpcs + phpstan + all tests
 vendor/bin/phpunit --testsuite integration   # one suite
 vendor/bin/phpunit --coverage-text  # coverage (needs Xdebug or PCOV)
 bash bin/multisite-e2e.sh           # disposable real multisite, network-only guard
+bash bin/api-login-e2e.sh           # real Two Factor, XML-RPC allowlist enforcement
+bash bin/install-handler-e2e.sh     # one-click Two Factor installation flow
+bash bin/blocking-mode-e2e.sh       # optional setup gate against real Two Factor
 bash bin/update-e2e.sh              # disposable real site, GitHub Release update path
 ```
 
@@ -646,13 +650,20 @@ request:
 - **lint** — `php -l`, PHP 7.2–8.4
 - **PHPCS / PHPCompatibility** — coding standards + the PHP 7.2 floor
 - **PHPUnit** — unit + integration, PHP 8.2–8.4
-- **coverage** — PHPUnit coverage (PCOV); summary in the job's GitHub summary,
-  clover uploaded as an artifact
+- **coverage** — combined PHPUnit line coverage across the normal and
+  Two-Factor-absent suites (PCOV), enforced at a 90% floor; summary in the job's
+  GitHub summary and Clover reports uploaded as artifacts
 - **Playground integration** — boots a real WordPress + the real Two Factor
   plugin headlessly and asserts enforcement end-to-end (see
   [`playground/ci-blueprint.json`](playground/ci-blueprint.json))
 - **Multisite E2E** — boots a disposable SQLite-backed multisite and asserts
   per-site activation is refused while network activation succeeds.
+- **API-login E2E** — runs against real Two Factor and asserts the XML-RPC
+  allowlist requires both an allowed account and Application Password authentication.
+- **Install-handler E2E** — exercises the one-click Two Factor installer against
+  a disposable real WordPress site.
+- **Blocking-mode E2E** — asserts an unconfigured user is gated on interactive
+  requests and released after enabling a real Two Factor provider.
 - **Update E2E** — boots a disposable SQLite-backed site, installs the committed
   tree (`git archive`, the release layout) rewritten to an older version, forces
   an update check, and asserts by exact URL match that WordPress updates it from

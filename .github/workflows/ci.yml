@@ -103,10 +103,9 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Enforce coverage floor
-        # Conservative starting floor: the untestable glue is @codeCoverageIgnore'd,
-        # so the counted lines are almost entirely tested. Raise this toward the
-        # actual combined figure (see the step summary above) as a ratchet.
-        run: php bin/coverage-threshold.php 80 coverage.xml coverage-no-two-factor.xml
+        # Keep a little headroom below the current combined figure while making
+        # meaningful regressions fail. Untestable glue is @codeCoverageIgnore'd.
+        run: php bin/coverage-threshold.php 90 coverage.xml coverage-no-two-factor.xml
       - name: Upload coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -181,7 +180,7 @@ jobs:
           php-version: '8.3'
           coverage: none
           extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress + Two Factor, blocking-mode gate + mail encoder end-to-end
+      - name: Real WordPress + Two Factor, blocking-mode gate end-to-end
         run: bash bin/blocking-mode-e2e.sh
 
   update-e2e:
