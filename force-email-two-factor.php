@@ -7,6 +7,7 @@
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
  * Version:          1.12.0
+ * Requires at least: 6.8
  * Requires PHP:     7.2
  * License:          GPL-2.0-or-later
  * License URI:      https://www.gnu.org/licenses/gpl-2.0.html
@@ -576,46 +577,15 @@ function force_2fa_user_has_capability( WP_User $user, $capability ) {
 		return true;
 	}
 
+	// Per-site capability check across the user's sites. user_can_for_site() is
+	// guaranteed by the plugin's WordPress 6.8 minimum (it shipped in 6.7).
 	foreach ( get_blogs_of_user( $user->ID ) as $blog ) {
-		if ( force_2fa_user_can_on_site( $user, (int) $blog->userblog_id, $capability ) ) {
+		if ( user_can_for_site( $user, (int) $blog->userblog_id, $capability ) ) {
 			return true;
 		}
 	}
 
 	return false;
-}
-
-/**
- * Whether $user holds $capability on a specific site.
- *
- * Uses user_can_for_site() (WordPress 6.7+). On the plugin's minimum WordPress
- * 6.5–6.6, where that function does not exist, it evaluates the capability in the
- * target site's context by re-hydrating the user there — a fresh WP_User loads the
- * switched site's roles/caps, which user_can() on the already-loaded object would not.
- *
- * @param WP_User $user       The user.
- * @param int     $site_id    Target site (blog) ID.
- * @param string  $capability Capability to check.
- * @return bool
- */
-function force_2fa_user_can_on_site( WP_User $user, $site_id, $capability ) {
-	if ( function_exists( 'user_can_for_site' ) ) {
-		return (bool) user_can_for_site( $user, $site_id, $capability );
-	}
-
-	$switched = get_current_blog_id() !== (int) $site_id;
-	if ( $switched ) {
-		switch_to_blog( (int) $site_id );
-	}
-
-	$scoped = new WP_User( $user->ID );
-	$can    = $scoped->has_cap( $capability );
-
-	if ( $switched ) {
-		restore_current_blog();
-	}
-
-	return (bool) $can;
 }
 
 /**

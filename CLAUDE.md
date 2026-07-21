@@ -8,7 +8,7 @@ A single-purpose, security-focused WordPress plugin (slug `force-email-two-facto
 
 Production code is only three files, all procedural PHP with `force_2fa_` / `FORCE_2FA_` prefixes:
 
-- `force-email-two-factor.php` — the entire plugin (~1,400 lines; extensively commented)
+- `force-email-two-factor.php` — the entire plugin (~1,900 lines; extensively commented)
 - `mu-loader.php` — optional one-line mu-plugin loader ("cannot be deactivated" mode)
 - `uninstall.php` — purges the only persistent footprint (Plugin Update Checker's site option + cron)
 
@@ -34,11 +34,15 @@ vendor/bin/phpunit --testsuite unit          # or: integration
 vendor/bin/phpunit --coverage-text           # needs PCOV or Xdebug
 ```
 
-End-to-end scripts (what CI runs; both build a real WordPress with the SQLite drop-in):
+End-to-end scripts (what CI runs; each builds a real WordPress with the SQLite drop-in):
 
 ```sh
-bash bin/multisite-e2e.sh    # network-only activation behavior on a real multisite
-bash bin/update-e2e.sh       # real update from a GitHub Release asset (set GITHUB_TOKEN)
+bash bin/multisite-e2e.sh        # network-only activation behavior on a real multisite
+bash bin/multisite-scope-e2e.sh  # network-wide capability + role scope (cross-site bypass)
+bash bin/api-login-e2e.sh        # Application Password API-login allowlist behavior
+bash bin/install-handler-e2e.sh  # one-click Two Factor installation handler
+bash bin/blocking-mode-e2e.sh    # required-setup blocking mode with real Two Factor
+bash bin/update-e2e.sh           # real update from a GitHub Release asset (set GITHUB_TOKEN)
 ```
 
 The plugin **runtime** supports PHP 7.2+; dev tooling deliberately requires modern PHP. Cross-version safety is enforced by `php -l` across 7.2–8.4 and PHPCompatibility (`testVersion 7.2-`) in CI — do not use post-7.2 syntax in the three production files (tests and `bin/` may use newer syntax).
@@ -55,7 +59,7 @@ Hook registration is centralized in `force_2fa_register_hooks()` near the bottom
 
 - **Soft dependency:** Two Factor being absent must never fatal — every enforcement path bails via `force_2fa_dependency_met()` (checks `Two_Factor_Core` and that the `Two_Factor_Email` provider is actually registered), and the plugin's only behavior in that state is an admin notice with a one-click installer.
 - **Append, never replace:** `force_2fa_filter_enabled_providers()` (hooked to Two Factor's `two_factor_enabled_providers_for_user` filter) appends the Email provider to an in-scope user's list. Users' stronger factors (TOTP, WebAuthn) and backup codes must always be preserved.
-- **Enforcement scope, default all users:** `force_2fa_user_is_exempt()` delegates to the pure `force_2fa_exemption_decision()`. `FORCE_2FA_ENFORCED_CAPABILITY` (read via `defined()`, **default `''` = everyone**) is an opt-in gate — when set (e.g. `manage_options`), users lacking that capability are exempt. The capability check (`force_2fa_user_has_capability()`) is network-**wide** on multisite: in scope if super admin OR holds the capability on any site the user belongs to (via `get_blogs_of_user()` + `user_can_for_site()`/`force_2fa_user_can_on_site()`) — a per-current-site check would let an admin of one subsite skip enforcement by logging in through another, since WP logins are network-wide. `FORCE_2FA_EXCLUDED_ROLES` is a further role carve-out. **Narrowing the scope also narrows the API-login hardening** (Two Factor only gates API logins for users "using 2FA"; this governs XML-RPC, not REST), the same trade-off as excluded roles — keep the default `''` unless that's acceptable.
+- **Enforcement scope, default all users:** `force_2fa_user_is_exempt()` delegates to the pure `force_2fa_exemption_decision()`. `FORCE_2FA_ENFORCED_CAPABILITY` (read via `defined()`, **default `''` = everyone**) is an opt-in gate — when set (e.g. `manage_options`), users lacking that capability are exempt. The capability check (`force_2fa_user_has_capability()`) is network-**wide** on multisite: in scope if super admin OR holds the capability on any site the user belongs to (`get_blogs_of_user()` + `user_can_for_site()`) — a per-current-site check would let an admin of one subsite skip enforcement by logging in through another, since WP logins are network-wide. `FORCE_2FA_EXCLUDED_ROLES` is a further role carve-out, also evaluated network-wide (`force_2fa_user_network_roles()` unions the user's roles across their sites) so a non-excluded role on another site keeps enforcement. **Narrowing the scope also narrows the API-login hardening** (Two Factor only gates API logins for users "using 2FA"; this governs XML-RPC, not REST), the same trade-off as excluded roles — keep the default `''` unless that's acceptable.
 - **API logins:** allowed to skip interactive 2FA only when the account is on the explicit allowlist **and** the request authenticated with an Application Password (tracked via `force_2fa_note_app_password_user()` binding the app-password user to the request). Everything else on the API path is denied.
 - **Multisite is network-only:** a `register_activation_hook` guard (`force_2fa_block_single_site_activation()`) refuses per-site activation. A `Network: true` header is deliberately **not** used — core would silently promote per-site activation to network-wide instead of refusing. Don't "fix" this.
 
@@ -85,4 +89,4 @@ PHPStan runs at level 5 over the three production files only. Two Factor is abse
 - **Docs travel with behavior:** `README.md` (GitHub) and `readme.txt` (WordPress-style) describe the same behavior in parallel and both need updating when behavior, requirements, or rollout guidance changes; `docs/DEPLOYMENT.md` covers the two update modes.
 - **Don't add** UI, options, database tables, cron jobs, or remote calls without a strong reason — statelessness is a design guarantee (`uninstall.php`'s header documents the only persistent footprint).
 - **Fail-safe over fail-closed on missing dependency:** if Two Factor or a provider is absent, avoid fatals and avoid corrupting users' provider lists.
-- CI (`.github/workflows/ci.yml`) runs lint (PHP 7.2–8.4), PHPCS, PHPStan, PHPUnit (8.2–8.4), coverage, a Playground integration job, and both E2E scripts; CodeQL and Semgrep also scan PRs. All GitHub Actions are pinned to full commit SHAs — keep that when editing workflows.
+- CI (`.github/workflows/ci.yml`) runs lint (PHP 7.2–8.4), PHPCS, PHPStan, PHPUnit (8.2–8.4), coverage, a Playground integration job, a minimum-WordPress (6.8) E2E, and all E2E scripts; CodeQL and Semgrep also scan PRs. All GitHub Actions are pinned to full commit SHAs — keep that when editing workflows.

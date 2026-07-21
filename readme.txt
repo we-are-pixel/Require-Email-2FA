@@ -1,7 +1,7 @@
 === Require Email 2FA ===
 Contributors: dpknauss
 Tags: two-factor, 2fa, security, authentication, login
-Requires at least: 6.5
+Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 7.2
 Stable tag: 1.12.0
@@ -114,9 +114,10 @@ Yes — Two Factor (`two-factor`) provides the Email provider this plugin makes
 mandatory, so nothing is enforced without it. As of 1.8.0 the dependency is no
 longer a hard activation gate. This plugin activates on its own, no-ops while Two
 Factor is inactive, and shows an admin notice with a one-click install/activate
-button. The `Requires at least: 6.5` floor is now just a conservative baseline,
-not a technical requirement of the (removed) `Requires Plugins` header — you can
-lower it if you need to run on older WordPress.
+button. The `Requires at least: 6.8` floor tracks Two Factor's own requirement:
+the current Two Factor release requires WordPress 6.8+, so on older WordPress the
+one-click installer cannot install it and nothing can be enforced. Run WordPress
+6.8 or newer (or install a Two Factor build that supports your WordPress version).
 
 = What if email delivery breaks and users are locked out? =
 
@@ -280,8 +281,11 @@ from this API-login gate.
   `define()` in wp-config.php.
 * The capability check is network-wide on multisite: a user is in scope if they are a
   super admin or hold the capability on any site they belong to (so an admin of one
-  subsite can't skip enforcement by logging in through another). Uses
-  `user_can_for_site()` on WordPress 6.7+, with a per-site context check on 6.5–6.6.
+  subsite can't skip enforcement by logging in through another). The per-site role
+  exclusion (`FORCE_2FA_EXCLUDED_ROLES`) is likewise evaluated across the user's sites.
+* Raised the minimum WordPress version to 6.8, matching the current Two Factor
+  release's own requirement (Two Factor 0.16.0 requires WordPress 6.8+); on older
+  WordPress the one-click installer cannot install it and nothing enforces.
 * Note: narrowing the scope also removes out-of-scope accounts from the XML-RPC
   API-login hardening (governs XML-RPC, not REST), the same trade-off as
   `FORCE_2FA_EXCLUDED_ROLES` — documented in the FAQ. `FORCE_2FA_EXCLUDED_ROLES` and

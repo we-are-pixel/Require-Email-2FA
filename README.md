@@ -6,7 +6,7 @@
 [![Docs](https://img.shields.io/badge/docs-deployment%20%26%20supply%20chain-3858e9.svg)](docs/DEPLOYMENT.md)
 
 [![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
-[![Requires WordPress 6.5+](https://img.shields.io/badge/WordPress-6.5%2B-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/)
+[![Requires WordPress 6.8+](https://img.shields.io/badge/WordPress-6.8%2B-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/)
 [![Tested up to WordPress 7.0](https://img.shields.io/badge/tested%20up%20to-WordPress%207.0-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/download/)
 [![Requires PHP 7.2+](https://img.shields.io/badge/PHP-7.2%2B-777bb4?logo=php&logoColor=white)](https://www.php.net/supported-versions.php)
 [![Requires Plugin: Two Factor](https://img.shields.io/badge/requires-Two%20Factor-3858e9.svg)](https://wordpress.org/plugins/two-factor/)
@@ -16,7 +16,7 @@ This is a Multisite compatible, single-purpose, WordPress utility plugin with no
 
 Require Email 2FA imposes three requirements site- or network-wide:
 
-1. The [Two Factor plugin](https://wordpress.org/plugins/two-factor/) must be installed and activated.
+1. The [Two Factor plugin](https://wordpress.org/plugins/two-factor/) must be installed and activated. Its current release requires **WordPress 6.8+**, which is therefore this plugin's minimum too — on older WordPress the one-click installer cannot install Two Factor and nothing can be enforced.
 2. All users must use Two Factor to log in. (Exceptions can be set with a constant or filter.)
 3. Users who do not have a different method selected in their two-factor settings will receive time-based, one-time passcodes by email.
 
@@ -260,8 +260,8 @@ add_filter( 'force_2fa_enforced_capability', function () {
 > admin, or hold the capability on **any** site they belong to — not just the site
 > they log in through. (WordPress logins are network-wide, so a per-site check would
 > let an admin of one subsite sign in via another where they hold only a low role and
-> skip enforcement.) Uses `user_can_for_site()` on WordPress 6.7+, falling back to a
-> per-site context check on 6.5–6.6.
+> skip enforcement.) The role exclusion (`FORCE_2FA_EXCLUDED_ROLES`) is evaluated
+> across the user's sites in the same way.
 
 If you need a specific account included or excluded regardless of capability, use the
 `force_2fa_user_is_exempt` filter (below).

@@ -196,6 +196,22 @@ jobs:
       - name: Real WordPress + Two Factor, blocking-mode gate end-to-end
         run: bash bin/blocking-mode-e2e.sh
 
+  min-wp-e2e:
+    name: Minimum WordPress E2E (6.8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: sqlite3, pdo_sqlite
+      # Proves the advertised minimum works end-to-end: on WordPress 6.8, the current
+      # Two Factor release installs and the plugin actually enforces. Guards against the
+      # floor drifting below Two Factor's own "Requires at least".
+      - name: Two Factor installs and enforces on the minimum WordPress (6.8)
+        run: WP_VERSION='6.8' bash bin/blocking-mode-e2e.sh
+
   update-e2e:
     name: Update E2E (GitHub Releases)
     runs-on: ubuntu-latest
