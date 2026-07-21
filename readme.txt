@@ -535,3 +535,10 @@ from this API-login gate.
 = 1.0.0 =
 * Initial release: forced email two-factor for all users, API-login guard, and
   emergency kill switch.
+
+== Upgrade Notice ==
+
+= 1.12.0 =
+Behavior change: forced 2FA now applies to administrators only by default, not
+every user. To keep forcing it on all users, define FORCE_2FA_ENFORCED_CAPABILITY
+as '' (empty string). See the changelog and the scope FAQ.
