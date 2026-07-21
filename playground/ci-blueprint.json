@@ -18,7 +18,7 @@
         },
         {
             "step": "wp-cli",
-            "command": "wp eval '$u = get_user_by(\"login\", \"citest\"); $ok = defined(\"FORCE_2FA_LOADED\") && class_exists(\"Two_Factor_Core\") && Two_Factor_Core::is_user_using_two_factor(1) && in_array(\"Two_Factor_Email\", (array) Two_Factor_Core::get_enabled_providers_for_user(1), true) && $u && ! Two_Factor_Core::is_user_using_two_factor($u->ID); file_put_contents(\"/wordpress/wp-content/plugins/force-email-two-factor/.ci-result\", $ok ? \"FORCE2FA_ASSERT_OK\" : \"FORCE2FA_ASSERT_FAIL\");'"
+            "command": "wp eval '$u = get_user_by(\"login\", \"citest\"); $ok = defined(\"FORCE_2FA_LOADED\") && class_exists(\"Two_Factor_Core\") && Two_Factor_Core::is_user_using_two_factor(1) && $u && Two_Factor_Core::is_user_using_two_factor($u->ID) && in_array(\"Two_Factor_Email\", (array) Two_Factor_Core::get_enabled_providers_for_user(1), true); file_put_contents(\"/wordpress/wp-content/plugins/force-email-two-factor/.ci-result\", $ok ? \"FORCE2FA_ASSERT_OK\" : \"FORCE2FA_ASSERT_FAIL\");'"
         }
     ]
 }

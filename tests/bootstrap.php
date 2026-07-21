@@ -138,6 +138,11 @@ function restore_current_blog() {
 	return true;
 }
 
+// The current site's blog id (defaults to 1); used by the network-aware scope gate.
+function get_current_blog_id() {
+	return (int) ( $GLOBALS['__force2fa_current_blog_id'] ?? 1 );
+}
+
 // Current-user capability check. Defaults to a fully-capable admin (every cap); a
 // test can set $GLOBALS['__force2fa_user_caps'] to the exact caps the user holds
 // to exercise a capability-limited role (e.g. can activate but not install).
@@ -156,6 +161,26 @@ function user_can( $user, $cap ) {
 		$user = get_userdata( $user );
 	}
 	return $user instanceof WP_User ? $user->has_cap( $cap ) : false;
+}
+
+// Site-specific capability check (WordPress 6.7+), used by the network-aware scope
+// gate. A test can set $GLOBALS['__force2fa_site_caps'][ $site_id ][ $user_id ] to a
+// cap => true map to model different capabilities on different subsites; otherwise it
+// falls back to the user's own caps (same as user_can()).
+function user_can_for_site( $user, $site_id, $cap ) {
+	$id  = $user instanceof WP_User ? $user->ID : (int) $user;
+	$map = $GLOBALS['__force2fa_site_caps'][ $site_id ][ $id ] ?? null;
+	if ( is_array( $map ) ) {
+		return ! empty( $map[ $cap ] );
+	}
+	$resolved = $user instanceof WP_User ? $user : get_userdata( $id );
+	return $resolved instanceof WP_User ? $resolved->has_cap( $cap ) : false;
+}
+
+// Super-admin check. A test lists super-admin user IDs in
+// $GLOBALS['__force2fa_super_admins']; empty/unset means none.
+function is_super_admin( $user_id = 0 ) {
+	return in_array( (int) $user_id, $GLOBALS['__force2fa_super_admins'] ?? array(), true );
 }
 
 // --- Notice / install-handler glue stubs --------------------------------------
