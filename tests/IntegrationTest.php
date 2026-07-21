@@ -15,6 +15,14 @@ use Two_Factor_Core;
  */
 final class IntegrationTest extends TestCase {
 
+	protected function setUp(): void {
+		parent::setUp();
+		// Exercise the Two Factor integration on ENFORCED users regardless of the
+		// default capability scope; disable the gate so the editor/subscriber roles
+		// used here behave as in the plugin's original site-wide baseline.
+		$this->enforceCapability( '' );
+	}
+
 	public function test_normal_user_ends_up_using_two_factor(): void {
 		$this->user( 3, 'editoruser', array( 'editor' ) );
 

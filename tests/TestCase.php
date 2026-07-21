@@ -71,11 +71,27 @@ abstract class TestCase extends BaseTestCase {
 		return (string) ob_get_clean();
 	}
 
-	/** Register a WP_User that get_userdata() will return for its ID. */
-	protected function user( int $id, string $login, array $roles = array() ): \WP_User {
-		$user = new \WP_User( $id, $login, $roles );
+	/**
+	 * Register a WP_User that get_userdata() will return for its ID.
+	 *
+	 * $caps is a map of capability => true carried by the user for user_can()
+	 * checks (the enforcement-scope gate keys off 'manage_options'). When omitted,
+	 * the 'administrator' role implies manage_options — see the WP_User stub.
+	 */
+	protected function user( int $id, string $login, array $roles = array(), array $caps = array() ): \WP_User {
+		$user = new \WP_User( $id, $login, $roles, $caps );
 		$GLOBALS['__force2fa_users'][ $id ] = $user;
 		return $user;
+	}
+
+	/** Convenience: register an administrator (holds manage_options). */
+	protected function adminUser( int $id, string $login, array $roles = array( 'administrator' ) ): \WP_User {
+		return $this->user( $id, $login, $roles, array( 'manage_options' => true ) );
+	}
+
+	/** Override the capability that defines the enforcement scope ('' = everyone). */
+	protected function enforceCapability( string $capability ): void {
+		$this->setFilter( 'force_2fa_enforced_capability', $capability );
 	}
 
 	/** Set a single-value user meta that get_user_meta( $id, $key, true ) will return. */

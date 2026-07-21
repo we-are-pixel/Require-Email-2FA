@@ -4,30 +4,35 @@ Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 6.5
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.11.0
+Stable tag: 1.12.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Requires the Two Factor plugin and makes emailed 2FA the default, required login factor for all users, with per-role exclusions.
+Requires the Two Factor plugin and makes emailed 2FA a required login factor for administrators by default — configurable to any capability or all users.
 
 == Description ==
 
 Builds on the [Two Factor](https://wordpress.org/plugins/two-factor/) plugin and
-makes its emailed 2FA codes a mandatory baseline for every user — so the login
-challenge appears even for accounts that never set up two-factor. Two Factor must
+makes its emailed 2FA codes a mandatory baseline for administrators by default — so
+the login challenge appears even for admin accounts that never set up two-factor.
+The scope is configurable: widen it to a lower capability or to every user, or add
+per-role exclusions. Two Factor must
 be active for any enforcement to happen; if it is not, this plugin activates but
 stays a no-op and shows an admin notice with a one-click installer. On multisite
 it is network-only: Network Activate it (per-site activation is blocked).
 
 It does two things:
 
-1. **Forces 2FA for everyone (by default).** It ensures the always-available,
-   zero-setup Email provider is enabled for every user, so the login challenge
-   appears for all accounts — including those that never configured 2FA.
+1. **Forces 2FA for administrators (by default).** It ensures the always-available,
+   zero-setup Email provider is enabled for every in-scope user, so the login
+   challenge appears for those accounts — including ones that never configured 2FA.
    Enforcement is appended rather than replacing the user's provider list, so
    users who set up a stronger factor (TOTP, hardware key / WebAuthn) keep it as
    their primary method, and backup codes remain available as a recovery path.
-   Enforcement can be scoped with per-role exclusions.
+   The scope defaults to administrators (the `manage_options` capability) and is
+   configurable via `FORCE_2FA_ENFORCED_CAPABILITY` — lower it to a smaller
+   capability, or set it to an empty string to enforce on every user — with
+   optional per-role exclusions on top.
 
 2. **Restricts XML-RPC logins.** Non-interactive logins bypass the interactive
    2FA screen. This plugin permits such a login to skip 2FA only when both the
@@ -53,9 +58,11 @@ It does two things:
 
 = Features =
 
-* Mandatory email two-factor as a universal floor, with no per-user setup.
+* Mandatory email two-factor as a floor for in-scope users, with no per-user setup.
 * Stronger user-configured factors (TOTP, WebAuthn) and backup codes preserved.
-* Per-role exclusions, defaulting to "all users" (`FORCE_2FA_EXCLUDED_ROLES`).
+* Capability-scoped enforcement, defaulting to administrators
+  (`FORCE_2FA_ENFORCED_CAPABILITY` = `manage_options`; set to `''` for all users).
+* Per-role exclusions on top of the scope (`FORCE_2FA_EXCLUDED_ROLES`).
 * A `force_2fa_user_is_exempt` filter for one-off, per-user exemptions.
 * Service-account allowlist for API logins, gated on Application Passwords.
 * Emergency kill switch via a wp-config constant (`FORCE_2FA_DISABLE`).
@@ -125,12 +132,30 @@ rejected like any invalid code; use **Resend Code** or restart login to generate
 a fresh email code. Repeated invalid attempts are handled by the Two Factor
 plugin's rate limiting and failed-attempt protections.
 
+= Who is required to use 2FA, and how do I change it? =
+
+By default, only administrators are — specifically, any user with the
+`manage_options` capability (which includes multisite super admins and custom roles
+that grant admin access). This is set by `FORCE_2FA_ENFORCED_CAPABILITY`
+(default `manage_options`).
+
+To enforce on **every user** (the pre-1.12.0 behavior), set it to an empty string:
+
+`
+define( 'FORCE_2FA_ENFORCED_CAPABILITY', '' );
+`
+
+(or `add_filter( 'force_2fa_enforced_capability', '__return_empty_string' );`).
+To widen the scope less drastically, set it to a lower capability such as
+`edit_posts` (contributors and up). Per-role exclusions still apply on top.
+
 = How do I exempt a role from forced 2FA? =
 
 List the role slugs (lowercase keys such as `subscriber`, not display names) in
-the `FORCE_2FA_EXCLUDED_ROLES` constant. A user is exempt only if every role they
-hold is on the list, so excluding a low-privilege role can never accidentally
-exempt a privileged account.
+the `FORCE_2FA_EXCLUDED_ROLES` constant. This carves roles out of the enforcement
+*scope* (see above); a user is exempt only if every role they hold is on the list,
+so excluding a low-privilege role can never accidentally exempt a privileged
+account that also holds a higher role.
 
 You can also override the effective list without editing this plugin:
 
@@ -239,6 +264,20 @@ cover REST is on the roadmap (issue #41). Excluding a role also removes those ac
 from this API-login gate.
 
 == Changelog ==
+
+= 1.12.0 =
+* **Changed default enforcement scope: administrators only.** Forced 2FA now applies
+  only to users with the `manage_options` capability (administrators, multisite super
+  admins, and any custom role granting admin access) instead of every user. This is a
+  behavior change for existing installs — non-admin accounts that were previously
+  forced will no longer be, unless you opt back in.
+* New `FORCE_2FA_ENFORCED_CAPABILITY` constant (default `manage_options`) and
+  `force_2fa_enforced_capability` filter control the scope. Set the capability to an
+  empty string (`''`) to restore the previous all-users behavior, or to a lower
+  capability such as `edit_posts` to enforce on contributors and up.
+* `FORCE_2FA_EXCLUDED_ROLES` and the `force_2fa_user_is_exempt` filter continue to
+  work as before, now as a carve-out applied on top of the capability scope.
+* No change to the XML-RPC API-login allowlist, blocking mode, or the kill switch.
 
 = 1.11.0 =
 * New optional **blocking mode** (`FORCE_2FA_BLOCKING_MODE`, or the

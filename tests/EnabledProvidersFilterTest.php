@@ -9,6 +9,15 @@ use Force2FA\TestCase;
  */
 final class EnabledProvidersFilterTest extends TestCase {
 
+	protected function setUp(): void {
+		parent::setUp();
+		// These tests exercise the append/preserve mechanics on an ENFORCED user,
+		// independent of who is in scope. Disable the capability gate so the
+		// low-privilege roles used below (editor, subscriber) stay enforced; the
+		// scope decision itself is covered in ExemptTest.
+		$this->enforceCapability( '' );
+	}
+
 	public function test_appends_email_for_a_normal_user(): void {
 		$this->user( 3, 'editoruser', array( 'editor' ) );
 		$result = force_2fa_filter_enabled_providers( array(), 3 );

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single-purpose, security-focused WordPress plugin (slug `force-email-two-factor`) that makes the [Two Factor](https://wordpress.org/plugins/two-factor/) plugin's emailed passcodes a mandatory login baseline for every user, and locks the XML-RPC/REST API-login path down to an allowlist of Application-Password-authenticated accounts. There is no admin UI, no options page, no database state — all operator configuration is via `wp-config.php` constants or filters. Changes should stay narrow, testable, and easy to audit (see CONTRIBUTING.md).
+A single-purpose, security-focused WordPress plugin (slug `force-email-two-factor`) that makes the [Two Factor](https://wordpress.org/plugins/two-factor/) plugin's emailed passcodes a mandatory login baseline for administrators by default (scope is capability-configurable down to a lower capability or up to all users), and locks the XML-RPC/REST API-login path down to an allowlist of Application-Password-authenticated accounts. There is no admin UI, no options page, no database state — all operator configuration is via `wp-config.php` constants or filters. Changes should stay narrow, testable, and easy to audit (see CONTRIBUTING.md).
 
 Production code is only three files, all procedural PHP with `force_2fa_` / `FORCE_2FA_` prefixes:
 
@@ -54,11 +54,12 @@ Hook registration is centralized in `force_2fa_register_hooks()` near the bottom
 ### The enforcement model
 
 - **Soft dependency:** Two Factor being absent must never fatal — every enforcement path bails via `force_2fa_dependency_met()` (checks `Two_Factor_Core` and that the `Two_Factor_Email` provider is actually registered), and the plugin's only behavior in that state is an admin notice with a one-click installer.
-- **Append, never replace:** `force_2fa_filter_enabled_providers()` (hooked to Two Factor's `two_factor_enabled_providers_for_user` filter) appends the Email provider to a user's list. Users' stronger factors (TOTP, WebAuthn) and backup codes must always be preserved.
+- **Append, never replace:** `force_2fa_filter_enabled_providers()` (hooked to Two Factor's `two_factor_enabled_providers_for_user` filter) appends the Email provider to an in-scope user's list. Users' stronger factors (TOTP, WebAuthn) and backup codes must always be preserved.
+- **Enforcement scope is capability-gated:** `force_2fa_user_is_exempt()` treats a user as exempt unless they hold `FORCE_2FA_ENFORCED_CAPABILITY` (default `manage_options` → admins only); the decision itself lives in the pure `force_2fa_exemption_decision()`. Setting the capability to `''` restores the all-users baseline. `FORCE_2FA_EXCLUDED_ROLES` is a further role carve-out applied on top of the capability scope.
 - **API logins:** allowed to skip interactive 2FA only when the account is on the explicit allowlist **and** the request authenticated with an Application Password (tracked via `force_2fa_note_app_password_user()` binding the app-password user to the request). Everything else on the API path is denied.
 - **Multisite is network-only:** a `register_activation_hook` guard (`force_2fa_block_single_site_activation()`) refuses per-site activation. A `Network: true` header is deliberately **not** used — core would silently promote per-site activation to network-wide instead of refusing. Don't "fix" this.
 
-Operator configuration surface (keep it constants + filters, nothing else): `FORCE_2FA_DISABLE`, `FORCE_2FA_EXCLUDED_ROLES` / `force_2fa_excluded_roles`, `FORCE_2FA_API_LOGIN_ALLOWLIST` / `force_2fa_api_login_allowlist`, `force_2fa_user_is_exempt`, `FORCE_2FA_DISABLE_SELF_UPDATE` / `force_2fa_self_update_enabled`.
+Operator configuration surface (keep it constants + filters, nothing else): `FORCE_2FA_DISABLE`, `FORCE_2FA_ENFORCED_CAPABILITY` / `force_2fa_enforced_capability`, `FORCE_2FA_EXCLUDED_ROLES` / `force_2fa_excluded_roles`, `FORCE_2FA_API_LOGIN_ALLOWLIST` / `force_2fa_api_login_allowlist`, `force_2fa_user_is_exempt`, `FORCE_2FA_DISABLE_SELF_UPDATE` / `force_2fa_self_update_enabled`.
 
 ### Self-update path
 

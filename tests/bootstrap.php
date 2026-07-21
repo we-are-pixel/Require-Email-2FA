@@ -148,6 +148,16 @@ function current_user_can( $cap ) {
 	return true;
 }
 
+// Per-user capability check used by the enforcement-scope gate
+// (force_2fa_user_is_exempt). Accepts a WP_User or a user ID and reads the caps
+// carried by the WP_User stub (see its constructor / has_cap()).
+function user_can( $user, $cap ) {
+	if ( ! $user instanceof WP_User ) {
+		$user = get_userdata( $user );
+	}
+	return $user instanceof WP_User ? $user->has_cap( $cap ) : false;
+}
+
 // --- Notice / install-handler glue stubs --------------------------------------
 // Enough of the WordPress admin surface for the dependency-notice renderers and
 // the one-click install handler to run under output buffering, so the branch that
@@ -230,11 +240,26 @@ if ( ! class_exists( 'WP_User' ) ) {
 		public $ID;
 		public $user_login;
 		public $roles;
+		public $allcaps;
 
-		public function __construct( $id = 0, $user_login = '', array $roles = array() ) {
+		public function __construct( $id = 0, $user_login = '', array $roles = array(), array $caps = array() ) {
 			$this->ID         = $id;
 			$this->user_login = $user_login;
 			$this->roles      = $roles;
+
+			// Faithful-enough default: the 'administrator' role implies
+			// manage_options in WordPress's real role→cap map, so derive it when
+			// no explicit caps are supplied. Tests wanting a different capability
+			// posture pass $caps as a map of cap => true.
+			if ( empty( $caps ) && in_array( 'administrator', $roles, true ) ) {
+				$caps = array( 'manage_options' => true );
+			}
+
+			$this->allcaps = $caps;
+		}
+
+		public function has_cap( $cap ) {
+			return ! empty( $this->allcaps[ $cap ] );
 		}
 	}
 }
