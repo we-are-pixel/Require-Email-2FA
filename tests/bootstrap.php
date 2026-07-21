@@ -281,7 +281,17 @@ if ( ! class_exists( 'WP_User' ) ) {
 		public function __construct( $id = 0, $user_login = '', array $roles = array(), array $caps = array() ) {
 			$this->ID         = $id;
 			$this->user_login = $user_login;
-			$this->roles      = $roles;
+
+			// When re-hydrated by ID alone (as the plugin does inside switch_to_blog()
+			// to read another site's roles/caps), pull this blog's roles/caps from the
+			// per-site test globals — mirroring WordPress loading per-site capabilities.
+			if ( '' === $user_login && empty( $roles ) && empty( $caps ) ) {
+				$blog  = $GLOBALS['__force2fa_current_blog_id'] ?? 1;
+				$roles = $GLOBALS['__force2fa_site_roles'][ $blog ][ $id ] ?? array();
+				$caps  = $GLOBALS['__force2fa_site_caps'][ $blog ][ $id ] ?? array();
+			}
+
+			$this->roles = $roles;
 
 			// Faithful-enough default: the 'administrator' role implies
 			// manage_options in WordPress's real role→cap map, so derive it when

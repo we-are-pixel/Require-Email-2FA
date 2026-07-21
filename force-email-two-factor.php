@@ -619,11 +619,64 @@ function force_2fa_user_can_on_site( WP_User $user, $site_id, $capability ) {
 }
 
 /**
+ * The union of a user's roles across the sites they belong to.
+ *
+ * Single site: just the user's roles. Multisite: the roles the user holds on EVERY
+ * site they are a member of, unioned. This keeps the FORCE_2FA_EXCLUDED_ROLES
+ * carve-out network-safe — a user who is low-privilege on the site they log in through
+ * but holds a non-excluded role on another network site is NOT exempted, because
+ * WordPress logins are network-wide and a session opened on one site is usable on the
+ * others. Evaluating only the login site's roles would re-open the same cross-site
+ * bypass the network-wide capability check (force_2fa_user_has_capability) closes.
+ *
+ * @param WP_User $user The resolved user.
+ * @return string[] Role slugs held anywhere in the network.
+ */
+function force_2fa_user_network_roles( WP_User $user ) {
+	if ( ! is_multisite() ) {
+		return (array) $user->roles;
+	}
+
+	$roles = (array) $user->roles;
+	foreach ( get_blogs_of_user( $user->ID ) as $blog ) {
+		$roles = array_merge( $roles, force_2fa_user_roles_on_site( $user->ID, (int) $blog->userblog_id ) );
+	}
+
+	return array_values( array_unique( $roles ) );
+}
+
+/**
+ * A user's roles on a specific site.
+ *
+ * Re-hydrates the user in the target site's context so the returned roles reflect that
+ * site; a WP_User already loaded for another site would report the wrong roles.
+ *
+ * @param int $user_id The user ID.
+ * @param int $site_id Target site (blog) ID.
+ * @return string[]
+ */
+function force_2fa_user_roles_on_site( $user_id, $site_id ) {
+	$switched = get_current_blog_id() !== (int) $site_id;
+	if ( $switched ) {
+		switch_to_blog( (int) $site_id );
+	}
+
+	$scoped = new WP_User( (int) $user_id );
+	$roles  = (array) $scoped->roles;
+
+	if ( $switched ) {
+		restore_current_blog();
+	}
+
+	return $roles;
+}
+
+/**
  * Whether a user is exempt from forced two-factor.
  *
- * Glue: gathers the user's roles and whether they hold the enforced capability,
- * then delegates the decision to force_2fa_exemption_decision(). By default the
- * enforced capability is '' (no gate), so EVERY user is in scope; defining
+ * Glue: gathers whether the user holds the enforced capability (network-wide) and
+ * their role set, then delegates the decision to force_2fa_exemption_decision(). By
+ * default the enforced capability is '' (no gate), so EVERY user is in scope; defining
  * FORCE_2FA_ENFORCED_CAPABILITY narrows enforcement (e.g. admins-only). The
  * FORCE_2FA_EXCLUDED_ROLES denylist further carves out roles among in-scope users,
  * and the 'force_2fa_user_is_exempt' filter allows programmatic overrides for edge
@@ -635,10 +688,18 @@ function force_2fa_user_can_on_site( WP_User $user, $site_id, $capability ) {
 function force_2fa_user_is_exempt( WP_User $user ) {
 	$enforced_capability = force_2fa_enforced_capability();
 	$has_capability      = force_2fa_user_has_capability( $user, $enforced_capability );
+	$excluded_roles      = force_2fa_normalize_string_list( force_2fa_excluded_roles() );
+
+	// Gather roles network-wide only when a denylist exists: with no excluded roles the
+	// role branch can never exempt anyone, so the (possibly multi-site) lookup is
+	// pointless work. This keeps the common no-exclusions case as cheap as before.
+	$roles = empty( $excluded_roles )
+		? array()
+		: force_2fa_normalize_string_list( force_2fa_user_network_roles( $user ) );
 
 	$exempt = force_2fa_exemption_decision(
-		force_2fa_normalize_string_list( $user->roles ),
-		force_2fa_normalize_string_list( force_2fa_excluded_roles() ),
+		$roles,
+		$excluded_roles,
 		$enforced_capability,
 		$has_capability
 	);

@@ -95,6 +95,57 @@ final class ExemptTest extends TestCase {
 		$this->assertTrue( force_2fa_user_is_exempt( $user ) );
 	}
 
+	public function test_multisite_capability_scope_plus_role_exclusion_no_bypass(): void {
+		// The reproduced P1: capability scoping AND a role exclusion combined.
+		// User is a subscriber on the login site (1) but an administrator on site 2,
+		// FORCE_2FA_ENFORCED_CAPABILITY = manage_options, and subscriber is excluded.
+		// The capability check keeps them in scope; the role denylist must NOT then
+		// exempt them off their login-site subscriber role — their network role set
+		// includes administrator, which is not excluded.
+		$this->enforceCapability( 'manage_options' );
+		$this->excludeRoles( array( 'subscriber' ) );
+		$this->multisite( true );
+		$user = $this->user( 12, 'crosssiteadmin', array( 'subscriber' ) );
+		$this->userBlogs( 12, array( 1, 2 ) );
+		$this->siteCaps( 1, 12, array() );
+		$this->siteCaps( 2, 12, array( 'manage_options' => true ) );
+		$this->siteRoles( 1, 12, array( 'subscriber' ) );
+		$this->siteRoles( 2, 12, array( 'administrator' ) );
+
+		switch_to_blog( 1 );
+		$this->assertFalse( force_2fa_user_is_exempt( $user ) );
+		restore_current_blog();
+	}
+
+	public function test_multisite_role_exclusion_is_network_wide_even_with_gate_off(): void {
+		// Same cross-site class of bug in the DEFAULT config (no capability gate): a
+		// user excluded by their login-site role but holding a non-excluded role on
+		// another network site must stay enforced.
+		$this->excludeRoles( array( 'subscriber' ) );
+		$this->multisite( true );
+		$user = $this->user( 13, 'crosssiteeditor', array( 'subscriber' ) );
+		$this->userBlogs( 13, array( 1, 2 ) );
+		$this->siteRoles( 1, 13, array( 'subscriber' ) );
+		$this->siteRoles( 2, 13, array( 'editor' ) );
+
+		switch_to_blog( 1 );
+		$this->assertFalse( force_2fa_user_is_exempt( $user ) );
+		restore_current_blog();
+	}
+
+	public function test_multisite_role_exclusion_exempts_when_low_privilege_everywhere(): void {
+		// Legit exemption still works network-wide: a user who is a subscriber on
+		// every site they belong to, with subscriber excluded, is exempt.
+		$this->excludeRoles( array( 'subscriber' ) );
+		$this->multisite( true );
+		$user = $this->user( 14, 'lowpriv', array( 'subscriber' ) );
+		$this->userBlogs( 14, array( 1, 2 ) );
+		$this->siteRoles( 1, 14, array( 'subscriber' ) );
+		$this->siteRoles( 2, 14, array( 'subscriber' ) );
+
+		$this->assertTrue( force_2fa_user_is_exempt( $user ) );
+	}
+
 	// --- Role denylist carve-out (applies within the scope) -------------------
 
 	public function test_sole_excluded_role_is_exempt(): void {
