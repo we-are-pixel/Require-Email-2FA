@@ -8,7 +8,7 @@ A single-purpose, security-focused WordPress plugin (slug `force-email-two-facto
 
 Production code is only three files, all procedural PHP with `force_2fa_` / `FORCE_2FA_` prefixes:
 
-- `force-email-two-factor.php` — the entire plugin (~1,700 lines; extensively commented)
+- `force-email-two-factor.php` — the entire plugin (~1,400 lines; extensively commented)
 - `mu-loader.php` — optional one-line mu-plugin loader ("cannot be deactivated" mode)
 - `uninstall.php` — purges the only persistent footprint (Plugin Update Checker's site option + cron)
 
@@ -34,14 +34,11 @@ vendor/bin/phpunit --testsuite unit          # or: integration
 vendor/bin/phpunit --coverage-text           # needs PCOV or Xdebug
 ```
 
-End-to-end scripts (what CI runs; each builds a real WordPress with the SQLite drop-in):
+End-to-end scripts (what CI runs; both build a real WordPress with the SQLite drop-in):
 
 ```sh
-bash bin/multisite-e2e.sh       # network-only activation behavior on a real multisite
-bash bin/api-login-e2e.sh       # Application Password API-login allowlist behavior
-bash bin/install-handler-e2e.sh # one-click Two Factor installation handler
-bash bin/blocking-mode-e2e.sh   # required-setup blocking mode with real Two Factor
-bash bin/update-e2e.sh          # real update from a GitHub Release asset (set GITHUB_TOKEN)
+bash bin/multisite-e2e.sh    # network-only activation behavior on a real multisite
+bash bin/update-e2e.sh       # real update from a GitHub Release asset (set GITHUB_TOKEN)
 ```
 
 The plugin **runtime** supports PHP 7.2+; dev tooling deliberately requires modern PHP. Cross-version safety is enforced by `php -l` across 7.2–8.4 and PHPCompatibility (`testVersion 7.2-`) in CI — do not use post-7.2 syntax in the three production files (tests and `bin/` may use newer syntax).
@@ -87,4 +84,4 @@ PHPStan runs at level 5 over the three production files only. Two Factor is abse
 - **Docs travel with behavior:** `README.md` (GitHub) and `readme.txt` (WordPress-style) describe the same behavior in parallel and both need updating when behavior, requirements, or rollout guidance changes; `docs/DEPLOYMENT.md` covers the two update modes.
 - **Don't add** UI, options, database tables, cron jobs, or remote calls without a strong reason — statelessness is a design guarantee (`uninstall.php`'s header documents the only persistent footprint).
 - **Fail-safe over fail-closed on missing dependency:** if Two Factor or a provider is absent, avoid fatals and avoid corrupting users' provider lists.
-- CI (`.github/workflows/ci.yml`) runs lint (PHP 7.2–8.4), PHPCS, PHPStan, PHPUnit (8.2–8.4), coverage, a Playground integration job, and all E2E scripts; CodeQL and Semgrep also scan PRs. All GitHub Actions are pinned to full commit SHAs — keep that when editing workflows.
+- CI (`.github/workflows/ci.yml`) runs lint (PHP 7.2–8.4), PHPCS, PHPStan, PHPUnit (8.2–8.4), coverage, a Playground integration job, and both E2E scripts; CodeQL and Semgrep also scan PRs. All GitHub Actions are pinned to full commit SHAs — keep that when editing workflows.
