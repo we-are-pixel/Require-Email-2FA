@@ -48,6 +48,17 @@ mkdir -p "$WP/wp-content/plugins/force-email-two-factor"
 cp "$PLUGIN_DIR/force-email-two-factor.php" "$WP/wp-content/plugins/force-email-two-factor/"
 wp plugin activate force-email-two-factor
 
+# Since 1.12.0 the default enforcement scope is admins only. This suite verifies the
+# blocking-gate mechanics on a NON-admin (editor) subject, so restore site-wide scope
+# via the documented opt-out (FORCE_2FA_ENFORCED_CAPABILITY = '' — here as its filter),
+# which also exercises that opt-out end-to-end against real WordPress.
+echo "==> Restore site-wide enforcement scope (disable the admins-only capability gate)"
+mkdir -p "$WP/wp-content/mu-plugins"
+cat > "$WP/wp-content/mu-plugins/20-enforce-all-users.php" <<'PHP'
+<?php
+add_filter( 'force_2fa_enforced_capability', '__return_empty_string' );
+PHP
+
 echo "==> Create an unconfigured editor user"
 # wp user create does not email unless --send-email is passed, so no skip flag needed.
 wp user create alice alice@example.com --role=editor --user_pass=pw >/dev/null

@@ -80,6 +80,15 @@ cat > "$WP/wp-content/mu-plugins/00-app-passwords-available.php" <<'PHP'
 add_filter( 'wp_is_application_passwords_available', '__return_true' );
 PHP
 
+# Since 1.12.0 the default enforcement scope is admins only. This suite exercises the
+# allowlist against NON-admin (editor) service accounts, which must be "using 2FA" for
+# Two Factor to gate their API logins in the denied cases below. Restore site-wide scope
+# via the documented opt-out (FORCE_2FA_ENFORCED_CAPABILITY = '' — here as its filter).
+cat > "$WP/wp-content/mu-plugins/05-enforce-all-users.php" <<'PHP'
+<?php
+add_filter( 'force_2fa_enforced_capability', '__return_empty_string' );
+PHP
+
 echo "==> Create two editor users differing only in allowlist membership"
 SVC_REAL_PW="svc-real-pw"
 wp user create svc   svc@example.com   --role=editor --user_pass="$SVC_REAL_PW" >/dev/null
