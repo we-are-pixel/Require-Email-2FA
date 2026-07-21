@@ -3,7 +3,7 @@
  * Plugin Name:      Require Email 2FA
  * Plugin URI:       https://github.com/we-are-pixel/Require-Email-2FA
  * Update URI:       https://github.com/we-are-pixel/Require-Email-2FA
- * Description:      Requires the Two Factor plugin and makes emailed 2FA a required login factor for administrators by default (configurable to any capability or all users).
+ * Description:      Requires the Two Factor plugin and makes emailed 2FA a required login factor for all users (optionally scoped to a capability, e.g. administrators).
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
  * Version:          1.12.0
@@ -400,8 +400,8 @@ function force_2fa_excluded_roles() {
  *
  * DEFAULT IS '' → the capability gate is OFF and 2FA is forced on EVERY user. This
  * is the shipped security baseline and is unchanged from earlier versions: the
- * emailed floor (and, with it, the XML-RPC/REST API-login hardening) covers all
- * accounts, not just administrators.
+ * emailed floor (and, with it, the XML-RPC API-login hardening) covers all accounts,
+ * not just administrators.
  *
  * OPT-IN: define FORCE_2FA_ENFORCED_CAPABILITY (or use the filter below) to NARROW
  * enforcement to users holding that capability. For example, admins-only:
@@ -420,15 +420,18 @@ function force_2fa_excluded_roles() {
  *
  * Why a CAPABILITY, not a role slug: capabilities catch super admins and any custom
  * or plugin-defined role that grants administrative access, whereas a hard-coded
- * 'administrator' slug would silently miss them. The capability is evaluated
- * network-aware and per current site — see force_2fa_user_has_capability().
+ * 'administrator' slug would silently miss them. On multisite the check is
+ * network-wide (super admins, or the capability on any of the user's sites), since
+ * WordPress logins are network-wide — see force_2fa_user_has_capability().
  *
  * SECURITY NOTE: narrowing the scope also narrows the API-login hardening, because
  * Two Factor only invokes the allowlist gate for users it considers "using 2FA."
- * Any account now out of scope can make XML-RPC/REST API logins without passing the
- * allowlist — the same trade-off documented for FORCE_2FA_EXCLUDED_ROLES. Widening
- * the scope only ever adds enforcement. Like all operator config here, this requires
- * filesystem access and is not an attacker-facing control.
+ * Any account now out of scope can make XML-RPC API logins without passing the
+ * allowlist — the same trade-off documented for FORCE_2FA_EXCLUDED_ROLES. (The
+ * allowlist governs XML-RPC, not REST; REST Application-Password logins bypass Two
+ * Factor's authenticate gate entirely — see the API-login allowlist notes below.)
+ * Widening the scope only ever adds enforcement. Like all operator config here, this
+ * requires filesystem access and is not an attacker-facing control.
  *
  * @return string Capability name, or '' to enforce on all users (the default).
  */
@@ -540,21 +543,21 @@ function force_2fa_exemption_decision( array $roles, array $excluded_roles, $enf
 }
 
 /**
- * Whether $user holds $capability for the CURRENT site (network-aware).
+ * Whether $user is in the enforcement scope for $capability (network-aware).
  *
- * On this network-only plugin, enforcement runs per site-context, so the capability
- * must be evaluated on the site being logged into — not on whatever site the user
- * object happened to be hydrated from. Two rules make the check fail-secure on
- * multisite:
+ * Single site: a straight capability check.
  *
- *   - An empty capability means "no gate" → everyone qualifies (in scope).
- *   - A super admin ALWAYS qualifies: their account is the highest-value on the
- *     network, so it must never fall out of scope on a subsite where they happen to
- *     hold only a low role.
+ * Multisite: WordPress authentication is NETWORK-WIDE (the logged-in cookie spans the
+ * network), and this plugin is network-only, so scope must be network-wide too. A
+ * per-current-site check would be a bypass: an administrator of subsite B could log
+ * in through subsite A — where they hold only a low role — and skip enforcement for
+ * their whole network-global account, session included. So on multisite a user is in
+ * scope when EITHER:
  *
- * The per-site check uses user_can_for_site() (WordPress 6.7+); on the plugin's
- * minimum WordPress 6.5–6.6 it falls back to user_can(), which reads the current
- * site for a freshly loaded user.
+ *   - they are a super admin (the highest-value accounts; always in scope), OR
+ *   - they hold the capability on ANY site they belong to (not just the current one).
+ *
+ * An empty capability means "no gate" → everyone qualifies.
  *
  * @param WP_User $user       The resolved user.
  * @param string  $capability Capability defining scope; '' means "no gate".
@@ -565,15 +568,54 @@ function force_2fa_user_has_capability( WP_User $user, $capability ) {
 		return true;
 	}
 
-	if ( is_multisite() && is_super_admin( $user->ID ) ) {
+	if ( ! is_multisite() ) {
+		return (bool) user_can( $user, $capability );
+	}
+
+	if ( is_super_admin( $user->ID ) ) {
 		return true;
 	}
 
-	if ( function_exists( 'user_can_for_site' ) ) {
-		return (bool) user_can_for_site( $user, get_current_blog_id(), $capability );
+	foreach ( get_blogs_of_user( $user->ID ) as $blog ) {
+		if ( force_2fa_user_can_on_site( $user, (int) $blog->userblog_id, $capability ) ) {
+			return true;
+		}
 	}
 
-	return (bool) user_can( $user, $capability );
+	return false;
+}
+
+/**
+ * Whether $user holds $capability on a specific site.
+ *
+ * Uses user_can_for_site() (WordPress 6.7+). On the plugin's minimum WordPress
+ * 6.5–6.6, where that function does not exist, it evaluates the capability in the
+ * target site's context by re-hydrating the user there — a fresh WP_User loads the
+ * switched site's roles/caps, which user_can() on the already-loaded object would not.
+ *
+ * @param WP_User $user       The user.
+ * @param int     $site_id    Target site (blog) ID.
+ * @param string  $capability Capability to check.
+ * @return bool
+ */
+function force_2fa_user_can_on_site( WP_User $user, $site_id, $capability ) {
+	if ( function_exists( 'user_can_for_site' ) ) {
+		return (bool) user_can_for_site( $user, $site_id, $capability );
+	}
+
+	$switched = get_current_blog_id() !== (int) $site_id;
+	if ( $switched ) {
+		switch_to_blog( (int) $site_id );
+	}
+
+	$scoped = new WP_User( $user->ID );
+	$can    = $scoped->has_cap( $capability );
+
+	if ( $switched ) {
+		restore_current_blog();
+	}
+
+	return (bool) $can;
 }
 
 /**

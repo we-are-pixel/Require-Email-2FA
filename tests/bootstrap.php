@@ -183,6 +183,17 @@ function is_super_admin( $user_id = 0 ) {
 	return in_array( (int) $user_id, $GLOBALS['__force2fa_super_admins'] ?? array(), true );
 }
 
+// The sites a user belongs to (multisite), used by the network-wide scope check.
+// A test lists a user's site IDs in $GLOBALS['__force2fa_user_blogs'][ $user_id ];
+// each is returned as an object with a userblog_id property, mirroring core.
+function get_blogs_of_user( $user_id ) {
+	$blogs = array();
+	foreach ( $GLOBALS['__force2fa_user_blogs'][ $user_id ] ?? array() as $site_id ) {
+		$blogs[] = (object) array( 'userblog_id' => (int) $site_id );
+	}
+	return $blogs;
+}
+
 // --- Notice / install-handler glue stubs --------------------------------------
 // Enough of the WordPress admin surface for the dependency-notice renderers and
 // the one-click install handler to run under output buffering, so the branch that

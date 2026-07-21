@@ -143,12 +143,16 @@ define( 'FORCE_2FA_ENFORCED_CAPABILITY', 'manage_options' );
 
 (or `add_filter( 'force_2fa_enforced_capability', function () { return 'manage_options'; } );`).
 Use a lower capability such as `edit_posts` to cover contributors and up. Leaving it
-undefined (or `''`) keeps the default of all users. On multisite the capability is
-checked per current site and super admins are always in scope.
+undefined (or `''`) keeps the default of all users. On multisite the check is
+network-wide: a user is in scope if they are a super admin or hold the capability on
+any site they belong to (WordPress logins are network-wide, so a per-site check would
+let an admin of one subsite log in through another and skip enforcement).
 
-Note: narrowing the scope also removes the out-of-scope accounts from the XML-RPC/REST
+Note: narrowing the scope also removes the out-of-scope accounts from the XML-RPC
 API-login hardening (Two Factor only gates the API login of users it treats as "using
-2FA") — the same trade-off as excluding a role. Per-role exclusions still apply on top.
+2FA") — the same trade-off as excluding a role. This governs XML-RPC, not REST (REST
+Application-Password logins bypass Two Factor's authenticate gate). Per-role
+exclusions still apply on top.
 
 = How do I exempt a role from forced 2FA? =
 
@@ -274,13 +278,15 @@ from this API-login gate.
   up. **The default is unchanged: all users are still enforced** (the constant
   defaults to `''`). Read via `defined()` (like `FORCE_2FA_DISABLE`) so it is safe to
   `define()` in wp-config.php.
-* The capability check is network-aware: on multisite it is evaluated per current site
-  (`user_can_for_site()` on WordPress 6.7+, `user_can()` on 6.5–6.6) and super admins
-  are always in scope.
-* Note: narrowing the scope also removes out-of-scope accounts from the XML-RPC/REST
-  API-login hardening, the same trade-off as `FORCE_2FA_EXCLUDED_ROLES` — documented
-  in the FAQ. `FORCE_2FA_EXCLUDED_ROLES` and the `force_2fa_user_is_exempt` filter are
-  unchanged. No change to blocking mode or the kill switch.
+* The capability check is network-wide on multisite: a user is in scope if they are a
+  super admin or hold the capability on any site they belong to (so an admin of one
+  subsite can't skip enforcement by logging in through another). Uses
+  `user_can_for_site()` on WordPress 6.7+, with a per-site context check on 6.5–6.6.
+* Note: narrowing the scope also removes out-of-scope accounts from the XML-RPC
+  API-login hardening (governs XML-RPC, not REST), the same trade-off as
+  `FORCE_2FA_EXCLUDED_ROLES` — documented in the FAQ. `FORCE_2FA_EXCLUDED_ROLES` and
+  the `force_2fa_user_is_exempt` filter are unchanged. No change to blocking mode or
+  the kill switch.
 
 = 1.11.0 =
 * New optional **blocking mode** (`FORCE_2FA_BLOCKING_MODE`, or the

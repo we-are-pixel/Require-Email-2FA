@@ -217,7 +217,7 @@ checklist and the `bin/blocking-mode-e2e.sh` end-to-end check.
 
 **By default, forced 2FA applies to every user.** This is the security baseline and
 is unchanged across versions: the emailed floor covers all accounts, so the login
-challenge — and the [XML-RPC/REST API-login hardening](#security-model) that rides on
+challenge — and the [XML-RPC API-login hardening](#security-model) that rides on
 it — protect everyone, not just administrators.
 
 If you want to **narrow** enforcement to privileged accounts (opt-in), define the
@@ -247,17 +247,21 @@ add_filter( 'force_2fa_enforced_capability', function () {
 
 > **Narrowing the scope also narrows the API-login hardening.** Two Factor only gates
 > the API login of a user it treats as "using 2FA," so any account you move out of
-> scope can make XML-RPC/REST logins *without* passing the [allowlist](#security-model)
-> — the same trade-off documented for excluded roles below. Only narrow the scope if
-> that is acceptable for the accounts you're excluding.
+> scope can make XML-RPC logins *without* passing the [allowlist](#security-model)
+> — the same trade-off documented for excluded roles below. (The allowlist governs
+> XML-RPC only; REST Application-Password logins bypass Two Factor's authenticate gate
+> regardless — see the Security model.) Only narrow the scope if that is acceptable
+> for the accounts you're excluding.
 
 > **Why a capability, not the `administrator` role slug?** A capability check catches
 > super admins and any custom or plugin-defined role that grants admin access,
 > whereas hard-coding the `administrator` slug would silently miss them. On
-> **multisite** the capability is evaluated **per current site** (using
-> `user_can_for_site()` on WordPress 6.7+, falling back to `user_can()` on 6.5–6.6),
-> and network **super admins are always in scope** so a high-value network account
-> can never fall out of enforcement on a subsite where it holds only a low role.
+> **multisite** the check is **network-wide**: a user is in scope if they are a super
+> admin, or hold the capability on **any** site they belong to — not just the site
+> they log in through. (WordPress logins are network-wide, so a per-site check would
+> let an admin of one subsite sign in via another where they hold only a low role and
+> skip enforcement.) Uses `user_can_for_site()` on WordPress 6.7+, falling back to a
+> per-site context check on 6.5–6.6.
 
 If you need a specific account included or excluded regardless of capability, use the
 `force_2fa_user_is_exempt` filter (below).

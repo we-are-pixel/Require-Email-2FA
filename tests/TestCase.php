@@ -27,6 +27,7 @@ abstract class TestCase extends BaseTestCase {
 		$GLOBALS['__force2fa_network_active']       = array();
 		$GLOBALS['__force2fa_super_admins']         = array();
 		$GLOBALS['__force2fa_site_caps']            = array();
+		$GLOBALS['__force2fa_user_blogs']           = array();
 		unset( $GLOBALS['force_2fa_app_password_user_id'], $GLOBALS['__force2fa_providers'], $GLOBALS['__force2fa_is_network_admin'], $GLOBALS['__force2fa_user_caps'], $GLOBALS['__force2fa_is_multisite'], $GLOBALS['__force2fa_sites'], $GLOBALS['__force2fa_nonce_ok'] );
 
 		// Start every test from "Two Factor not on disk" so the on-disk check is
@@ -110,6 +111,11 @@ abstract class TestCase extends BaseTestCase {
 	/** Set a user's capabilities on a specific site for user_can_for_site(). */
 	protected function siteCaps( int $siteId, int $userId, array $caps ): void {
 		$GLOBALS['__force2fa_site_caps'][ $siteId ][ $userId ] = $caps;
+	}
+
+	/** List the site IDs a user belongs to, for get_blogs_of_user(). */
+	protected function userBlogs( int $userId, array $siteIds ): void {
+		$GLOBALS['__force2fa_user_blogs'][ $userId ] = $siteIds;
 	}
 
 	/** Set a single-value user meta that get_user_meta( $id, $key, true ) will return. */

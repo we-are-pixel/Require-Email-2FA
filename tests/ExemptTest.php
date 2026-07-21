@@ -67,21 +67,32 @@ final class ExemptTest extends TestCase {
 		$this->assertFalse( force_2fa_user_is_exempt( $user ) );
 	}
 
-	public function test_capability_is_evaluated_for_the_current_site(): void {
-		// The capability is checked on the site being logged into: a user who is an
-		// admin on site 2 but only a subscriber on the current site (1) is exempt on
-		// site 1, and enforced when the current site is 2.
+	public function test_multisite_scope_is_network_wide_no_cross_site_bypass(): void {
+		// The cross-site bypass fix: a user who is only a subscriber on the CURRENT
+		// site (1) but an administrator on another site they belong to (2) must stay
+		// in scope — WordPress logins are network-wide, so a per-current-site check
+		// would let them sign in through site 1 and skip enforcement.
 		$this->enforceCapability( 'manage_options' );
-		$user = $this->user( 10, 'multisiteadmin', array( 'subscriber' ) );
-		$this->siteCaps( 1, 10, array() );
-		$this->siteCaps( 2, 10, array( 'manage_options' => true ) );
+		$this->multisite( true );
+		$user = $this->user( 10, 'crosssite', array( 'subscriber' ) );
+		$this->userBlogs( 10, array( 1, 2 ) );
+		$this->siteCaps( 1, 10, array() );                            // low role here
+		$this->siteCaps( 2, 10, array( 'manage_options' => true ) );  // admin elsewhere
 
 		switch_to_blog( 1 );
-		$this->assertTrue( force_2fa_user_is_exempt( $user ), 'exempt where they lack the capability' );
-
-		switch_to_blog( 2 );
-		$this->assertFalse( force_2fa_user_is_exempt( $user ), 'enforced on the site they administer' );
+		$this->assertFalse( force_2fa_user_is_exempt( $user ) );
 		restore_current_blog();
+	}
+
+	public function test_multisite_user_without_capability_on_any_site_is_exempt(): void {
+		$this->enforceCapability( 'manage_options' );
+		$this->multisite( true );
+		$user = $this->user( 11, 'plain', array( 'subscriber' ) );
+		$this->userBlogs( 11, array( 1, 2 ) );
+		$this->siteCaps( 1, 11, array() );
+		$this->siteCaps( 2, 11, array() );
+
+		$this->assertTrue( force_2fa_user_is_exempt( $user ) );
 	}
 
 	// --- Role denylist carve-out (applies within the scope) -------------------
