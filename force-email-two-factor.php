@@ -3,10 +3,11 @@
  * Plugin Name:      Require Email 2FA
  * Plugin URI:       https://github.com/we-are-pixel/Require-Email-2FA
  * Update URI:       https://github.com/we-are-pixel/Require-Email-2FA
- * Description:      Requires the Two Factor plugin and makes emailed 2FA the default, required login factor for all users.
+ * Description:      Requires the Two Factor plugin and makes emailed 2FA a required login factor for all users (optionally scoped to a capability, e.g. administrators).
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
- * Version:          1.11.0
+ * Version:          1.12.0
+ * Requires at least: 6.8
  * Requires PHP:     7.2
  * License:          GPL-2.0-or-later
  * License URI:      https://www.gnu.org/licenses/gpl-2.0.html
@@ -111,7 +112,7 @@ if ( defined( 'FORCE_2FA_DISABLE' ) && FORCE_2FA_DISABLE ) {
 if ( defined( 'FORCE_2FA_LOADED' ) ) {
 	return;
 }
-define( 'FORCE_2FA_LOADED', '1.11.0' );
+define( 'FORCE_2FA_LOADED', '1.12.0' );
 // @codeCoverageIgnoreEnd
 
 /**
@@ -354,8 +355,8 @@ function force_2fa_activation_blocked( $is_multisite, $network_wide ) {
  * Roles to EXCLUDE from forced two-factor.
  *
  * Default is an empty array → enforcement applies to ALL users. Add role slugs
- * (the lowercase keys, e.g. 'subscriber', 'customer', not display names) to
- * exempt those roles from having Email auto-enabled:
+ * (the lowercase keys, e.g. 'subscriber', 'customer', not display names) to exempt
+ * those roles from having Email auto-enabled:
  *
  *     const FORCE_2FA_EXCLUDED_ROLES = array( 'subscriber', 'customer' );
  *
@@ -393,6 +394,53 @@ const FORCE_2FA_EXCLUDED_ROLES = array();
  */
 function force_2fa_excluded_roles() {
 	return (array) apply_filters( 'force_2fa_excluded_roles', FORCE_2FA_EXCLUDED_ROLES );
+}
+
+/**
+ * Effective capability that defines the enforcement SCOPE.
+ *
+ * DEFAULT IS '' → the capability gate is OFF and 2FA is forced on EVERY user. This
+ * is the shipped security baseline and is unchanged from earlier versions: the
+ * emailed floor (and, with it, the XML-RPC API-login hardening) covers all accounts,
+ * not just administrators.
+ *
+ * OPT-IN: define FORCE_2FA_ENFORCED_CAPABILITY (or use the filter below) to NARROW
+ * enforcement to users holding that capability. For example, admins-only:
+ *
+ *     // wp-config.php
+ *     define( 'FORCE_2FA_ENFORCED_CAPABILITY', 'manage_options' );
+ *
+ * Any valid capability works — e.g. 'edit_posts' to cover contributors and up. When
+ * set, users who lack the capability are treated as exempt (see
+ * force_2fa_exemption_decision); FORCE_2FA_EXCLUDED_ROLES still applies on top.
+ *
+ * The constant is deliberately NOT declared here (unlike FORCE_2FA_EXCLUDED_ROLES,
+ * and like FORCE_2FA_DISABLE / FORCE_2FA_BLOCKING_MODE): it is read with defined()
+ * so an operator can define() it in wp-config.php — which loads first — without a
+ * fatal "cannot redeclare constant" error.
+ *
+ * Why a CAPABILITY, not a role slug: capabilities catch super admins and any custom
+ * or plugin-defined role that grants administrative access, whereas a hard-coded
+ * 'administrator' slug would silently miss them. On multisite the check is
+ * network-wide (super admins, or the capability on any of the user's sites), since
+ * WordPress logins are network-wide — see force_2fa_user_has_capability().
+ *
+ * SECURITY NOTE: narrowing the scope also narrows the API-login hardening, because
+ * Two Factor only invokes the allowlist gate for users it considers "using 2FA."
+ * Any account now out of scope can make XML-RPC API logins without passing the
+ * allowlist — the same trade-off documented for FORCE_2FA_EXCLUDED_ROLES. (The
+ * allowlist governs XML-RPC, not REST; REST Application-Password logins bypass Two
+ * Factor's authenticate gate entirely — see the API-login allowlist notes below.)
+ * Widening the scope only ever adds enforcement. Like all operator config here, this
+ * requires filesystem access and is not an attacker-facing control.
+ *
+ * @return string Capability name, or '' to enforce on all users (the default).
+ */
+function force_2fa_enforced_capability() {
+	$capability = defined( 'FORCE_2FA_ENFORCED_CAPABILITY' ) ? FORCE_2FA_ENFORCED_CAPABILITY : '';
+	$capability = apply_filters( 'force_2fa_enforced_capability', $capability );
+
+	return is_string( $capability ) ? trim( $capability ) : '';
 }
 
 /**
@@ -464,27 +512,172 @@ function force_2fa_normalize_string_list( $values ) {
 }
 
 /**
+ * Pure exemption decision from explicit inputs (no WordPress calls).
+ *
+ * Two independent exemptions, checked in order:
+ *
+ *   1. Capability scope (opt-in). If an enforced capability is configured
+ *      (non-empty) and the user does NOT hold it, they are out of scope → exempt.
+ *      An empty $enforced_capability (the default) disables this gate (enforce on
+ *      everyone).
+ *   2. Role denylist. Among in-scope users, a user is exempt only if they have at
+ *      least one role AND every role they hold is on the excluded list. Users with
+ *      no role are never exempted here (fail secure), and a user holding both an
+ *      excluded and a non-excluded role stays enforced.
+ *
+ * @param string[] $roles               Normalized (lowercased) role slugs the user holds.
+ * @param string[] $excluded_roles      Normalized (lowercased) excluded role slugs.
+ * @param string   $enforced_capability Capability defining scope; '' disables the gate.
+ * @param bool     $user_has_capability Whether the user holds $enforced_capability.
+ * @return bool True if forced 2FA should be skipped for this user.
+ */
+function force_2fa_exemption_decision( array $roles, array $excluded_roles, $enforced_capability, $user_has_capability ) {
+	// Capability scope: users outside the enforced capability are exempt.
+	if ( '' !== (string) $enforced_capability && ! $user_has_capability ) {
+		return true;
+	}
+
+	// Role denylist carve-out among in-scope users.
+	return ! empty( $roles )
+		&& ! empty( $excluded_roles )
+		&& empty( array_diff( $roles, $excluded_roles ) );
+}
+
+/**
+ * Whether $user is in the enforcement scope for $capability (network-aware).
+ *
+ * Single site: a straight capability check.
+ *
+ * Multisite: WordPress authentication is NETWORK-WIDE (the logged-in cookie spans the
+ * network), and this plugin is network-only, so scope must be network-wide too. A
+ * per-current-site check would be a bypass: an administrator of subsite B could log
+ * in through subsite A — where they hold only a low role — and skip enforcement for
+ * their whole network-global account, session included. So on multisite a user is in
+ * scope when EITHER:
+ *
+ *   - they are a super admin (the highest-value accounts; always in scope), OR
+ *   - they hold the capability on ANY site they belong to (not just the current one).
+ *
+ * An empty capability means "no gate" → everyone qualifies.
+ *
+ * @param WP_User $user       The resolved user.
+ * @param string  $capability Capability defining scope; '' means "no gate".
+ * @return bool True if the user is in the enforcement scope.
+ */
+function force_2fa_user_has_capability( WP_User $user, $capability ) {
+	if ( '' === (string) $capability ) {
+		return true;
+	}
+
+	if ( ! is_multisite() ) {
+		return (bool) user_can( $user, $capability );
+	}
+
+	if ( is_super_admin( $user->ID ) ) {
+		return true;
+	}
+
+	// Per-site capability check across the user's sites. user_can_for_site() is
+	// guaranteed by the plugin's WordPress 6.8 minimum (it shipped in 6.7).
+	foreach ( get_blogs_of_user( $user->ID ) as $blog ) {
+		if ( user_can_for_site( $user, (int) $blog->userblog_id, $capability ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * The union of a user's roles across the sites they belong to.
+ *
+ * Single site: just the user's roles. Multisite: the roles the user holds on EVERY
+ * site they are a member of, unioned. This keeps the FORCE_2FA_EXCLUDED_ROLES
+ * carve-out network-safe — a user who is low-privilege on the site they log in through
+ * but holds a non-excluded role on another network site is NOT exempted, because
+ * WordPress logins are network-wide and a session opened on one site is usable on the
+ * others. Evaluating only the login site's roles would re-open the same cross-site
+ * bypass the network-wide capability check (force_2fa_user_has_capability) closes.
+ *
+ * @param WP_User $user The resolved user.
+ * @return string[] Role slugs held anywhere in the network.
+ */
+function force_2fa_user_network_roles( WP_User $user ) {
+	if ( ! is_multisite() ) {
+		return (array) $user->roles;
+	}
+
+	$roles = (array) $user->roles;
+	foreach ( get_blogs_of_user( $user->ID ) as $blog ) {
+		$roles = array_merge( $roles, force_2fa_user_roles_on_site( $user->ID, (int) $blog->userblog_id ) );
+	}
+
+	return array_values( array_unique( $roles ) );
+}
+
+/**
+ * A user's roles on a specific site.
+ *
+ * Re-hydrates the user in the target site's context so the returned roles reflect that
+ * site; a WP_User already loaded for another site would report the wrong roles.
+ *
+ * @param int $user_id The user ID.
+ * @param int $site_id Target site (blog) ID.
+ * @return string[]
+ */
+function force_2fa_user_roles_on_site( $user_id, $site_id ) {
+	$switched = get_current_blog_id() !== (int) $site_id;
+	if ( $switched ) {
+		switch_to_blog( (int) $site_id );
+	}
+
+	$scoped = new WP_User( (int) $user_id );
+	$roles  = (array) $scoped->roles;
+
+	if ( $switched ) {
+		restore_current_blog();
+	}
+
+	return $roles;
+}
+
+/**
  * Whether a user is exempt from forced two-factor.
  *
- * Exempt only when the user has at least one role AND all of their roles are in
- * the excluded list. Users with no role are never exempted (fail secure). The
- * 'force_2fa_user_is_exempt' filter allows programmatic overrides for edge cases
- * (e.g. a specific user ID) without editing the role list.
+ * Glue: gathers whether the user holds the enforced capability (network-wide) and
+ * their role set, then delegates the decision to force_2fa_exemption_decision(). By
+ * default the enforced capability is '' (no gate), so EVERY user is in scope; defining
+ * FORCE_2FA_ENFORCED_CAPABILITY narrows enforcement (e.g. admins-only). The
+ * FORCE_2FA_EXCLUDED_ROLES denylist further carves out roles among in-scope users,
+ * and the 'force_2fa_user_is_exempt' filter allows programmatic overrides for edge
+ * cases (e.g. a specific user ID) without editing config.
  *
  * @param WP_User $user The resolved user.
  * @return bool True if forced 2FA should be skipped for this user.
  */
 function force_2fa_user_is_exempt( WP_User $user ) {
-	$excluded = force_2fa_normalize_string_list( force_2fa_excluded_roles() );
-	$roles    = force_2fa_normalize_string_list( $user->roles );
-	$exempt   = ! empty( $roles )
-		&& ! empty( $excluded )
-		&& empty( array_diff( $roles, $excluded ) );
+	$enforced_capability = force_2fa_enforced_capability();
+	$has_capability      = force_2fa_user_has_capability( $user, $enforced_capability );
+	$excluded_roles      = force_2fa_normalize_string_list( force_2fa_excluded_roles() );
+
+	// Gather roles network-wide only when a denylist exists: with no excluded roles the
+	// role branch can never exempt anyone, so the (possibly multi-site) lookup is
+	// pointless work. This keeps the common no-exclusions case as cheap as before.
+	$roles = empty( $excluded_roles )
+		? array()
+		: force_2fa_normalize_string_list( force_2fa_user_network_roles( $user ) );
+
+	$exempt = force_2fa_exemption_decision(
+		$roles,
+		$excluded_roles,
+		$enforced_capability,
+		$has_capability
+	);
 
 	/**
 	 * Filter the per-user exemption from forced two-factor.
 	 *
-	 * @param bool    $exempt Whether the user is exempt based on roles.
+	 * @param bool    $exempt Whether the user is exempt (capability scope + excluded roles).
 	 * @param WP_User $user   The user being evaluated.
 	 */
 	return (bool) apply_filters( 'force_2fa_user_is_exempt', $exempt, $user );
@@ -492,13 +685,14 @@ function force_2fa_user_is_exempt( WP_User $user ) {
 
 /**
  * Make two-factor mandatory by ensuring the Email provider is enabled for every
- * user (except excluded roles — see FORCE_2FA_EXCLUDED_ROLES).
+ * in-scope user (by default ALL users; see FORCE_2FA_EXCLUDED_ROLES and the opt-in
+ * FORCE_2FA_ENFORCED_CAPABILITY for how scope and exemptions are determined).
  *
  * Why this works: the Two Factor plugin treats a user as "using 2FA" whenever
  * they have at least one available provider. Two_Factor_Email::is_available_for_user()
  * returns true unconditionally and needs no per-user setup (it just mails a code
  * to the account address), so adding it as a floor forces the login challenge
- * for everyone — including users who never configured anything.
+ * for every user it is applied to — including those who never configured anything.
  *
  * Why APPEND (not replace): returning array( 'Two_Factor_Email' ) would strip
  * each user's stronger factors (TOTP, hardware keys) AND their backup codes on
