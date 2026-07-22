@@ -149,11 +149,12 @@ network-wide: a user is in scope if they are a super admin or hold the capabilit
 any site they belong to (WordPress logins are network-wide, so a per-site check would
 let an admin of one subsite log in through another and skip enforcement).
 
-Note: narrowing the scope also removes the out-of-scope accounts from the XML-RPC
-API-login hardening (Two Factor only gates the API login of users it treats as "using
-2FA") — the same trade-off as excluding a role. This governs XML-RPC, not REST (REST
-Application-Password logins bypass Two Factor's authenticate gate). Per-role
-exclusions still apply on top.
+Note: narrowing the scope does NOT weaken the XML-RPC allowlist. It is enforced
+independently of the 2FA scope — every XML-RPC login is held to the allowlist +
+Application-Password policy for all users, in scope or not — so scoping interactive 2FA
+to admins never opens XML-RPC to everyone else. (This governs XML-RPC, not REST; REST
+Application-Password logins bypass the authenticate chain.) Per-role exclusions still
+apply on top for the interactive challenge.
 
 = Where do these settings go — wp-config.php or a filter? =
 
@@ -309,8 +310,9 @@ API-login allowlist governs XML-RPC only: an XML-RPC login can skip the interact
 challenge only for allowlisted accounts using Application Passwords, while REST
 Application Password logins are not gated by Two Factor and are not restricted by
 the allowlist (scope REST access via roles/capabilities). Extending the allowlist to
-cover REST is on the roadmap (issue #41). Excluding a role also removes those accounts
-from this API-login gate.
+cover REST is on the roadmap (issue #41). The XML-RPC allowlist is enforced for every
+account independently of the 2FA scope, so narrowing the scope (or excluding a role)
+never opens XML-RPC to accounts left out of the interactive challenge.
 
 == Changelog ==
 

@@ -301,13 +301,13 @@ add_filter( 'force_2fa_enforced_capability', function () {
 > constant" fatal. A `force_2fa_enforced_capability` filter, if you add one, overrides
 > the constant — see [Where configuration goes](#where-configuration-goes).
 
-> **Narrowing the scope also narrows the API-login hardening.** Two Factor only gates
-> the API login of a user it treats as "using 2FA," so any account you move out of
-> scope can make XML-RPC logins *without* passing the [allowlist](#security-model)
-> — the same trade-off documented for excluded roles below. (The allowlist governs
-> XML-RPC only; REST Application-Password logins bypass Two Factor's authenticate gate
-> regardless — see the Security model.) Only narrow the scope if that is acceptable
-> for the accounts you're excluding.
+> **Narrowing the scope does NOT weaken the XML-RPC hardening.** The
+> [API-login allowlist](#security-model) is enforced independently of the 2FA scope —
+> the plugin holds *every* XML-RPC login to the allowlist + Application-Password policy
+> for all users, in scope or not. So you can scope interactive 2FA to admins without
+> opening XML-RPC to everyone else. (The allowlist governs XML-RPC only; REST
+> Application-Password logins bypass the authenticate chain regardless — see the
+> Security model.)
 
 > **Why a capability, not the `administrator` role slug?** A capability check catches
 > super admins and any custom or plugin-defined role that grants admin access,
@@ -362,12 +362,10 @@ exempt on that site. Choose excluded roles deliberately, and prefer the
 Exclusion means "don't *force* 2FA"; it doesn't forbid it. An excluded user who
 set up their own 2FA keeps it.
 
-> **Excluding a role also removes those accounts from the API-login hardening.**
-> Two Factor only gates the API login of a user it considers "using 2FA." An
-> excluded account with no other factor configured is not using 2FA, so Two
-> Factor never gates its XML-RPC/REST logins — the API-login allowlist does not
-> apply to it. Don't exclude a role for accounts you also expect the API allowlist
-> to govern.
+> **Excluding a role does not open the XML-RPC allowlist.** The API-login allowlist is
+> enforced for every account regardless of 2FA scope or role exclusions, so excluding a
+> role only drops the *interactive* login challenge for it — its XML-RPC logins are
+> still held to the allowlist + Application-Password policy.
 
 For one-off cases (e.g. exempt a single user ID rather than a whole role), use the
 `force_2fa_user_is_exempt` filter instead of editing the role list:
