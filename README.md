@@ -6,7 +6,7 @@
 [![Docs](https://img.shields.io/badge/docs-deployment%20%26%20supply%20chain-3858e9.svg)](docs/DEPLOYMENT.md)
 
 [![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
-[![Requires WordPress 6.5+](https://img.shields.io/badge/WordPress-6.5%2B-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/)
+[![Requires WordPress 6.8+](https://img.shields.io/badge/WordPress-6.8%2B-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/)
 [![Tested up to WordPress 7.0](https://img.shields.io/badge/tested%20up%20to-WordPress%207.0-21759b?logo=wordpress&logoColor=white)](https://wordpress.org/download/)
 [![Requires PHP 7.2+](https://img.shields.io/badge/PHP-7.2%2B-777bb4?logo=php&logoColor=white)](https://www.php.net/supported-versions.php)
 [![Requires Plugin: Two Factor](https://img.shields.io/badge/requires-Two%20Factor-3858e9.svg)](https://wordpress.org/plugins/two-factor/)
@@ -16,7 +16,7 @@ This is a Multisite compatible, single-purpose, WordPress utility plugin with no
 
 Require Email 2FA imposes three requirements site- or network-wide:
 
-1. The [Two Factor plugin](https://wordpress.org/plugins/two-factor/) must be installed and activated.
+1. The [Two Factor plugin](https://wordpress.org/plugins/two-factor/) must be installed and activated. Its current release requires **WordPress 6.8+**, which is therefore this plugin's minimum too — on older WordPress the one-click installer cannot install Two Factor and nothing can be enforced.
 2. All users must use Two Factor to log in. (Exceptions can be set with a constant or filter.)
 3. Users who do not have a different method selected in their two-factor settings will receive time-based, one-time passcodes by email.
 
@@ -24,7 +24,7 @@ The plugin also hardens the XML-RPC login path with a named allowlist of service
 
 On multisite the plugin is **network-only** (Network Activate; per-site activation is blocked), and an optional `mu-loader.php` file can be moved to the `/mu-plugins` folder to make it un-deactivatable within the WordPress admin interface.
 
-Require Email 2FA's dependency on Two Factor is *soft*: the Require Email 2FA plugin activates on its own and does nothing until Two Factor is active. It only displays a prominent admin notice with a one-click installer for the Two Factor plugin. Administrators should pre-install and activate Two Factor or do so immediately after installing and activating Require Email 2FA. Then Require Email 2FA will automatically select emailed passcodes as the primary (default) 2FA method for all users who do not have a different one selected. This enforcement will continue for all existing and new users as long as Require Email 2FA is active.
+Require Email 2FA's dependency on Two Factor is *soft*: the Require Email 2FA plugin activates on its own and does nothing until Two Factor is active. It only displays a prominent admin notice with a one-click installer for the Two Factor plugin. Administrators should pre-install and activate Two Factor or do so immediately after installing and activating Require Email 2FA. Then Require Email 2FA will automatically select emailed passcodes as the primary (default) 2FA method for all users who do not have a different one selected. This enforcement will continue for all existing and new users as long as Require Email 2FA is active. Enforcement can optionally be narrowed to privileged accounts (e.g. administrators only) — see [Enforcement scope](#enforcement-scope-who-is-required-to-use-2fa).
 
 > [!TIP]
 > **▶ [Try it live in WordPress Playground][playground]** — boots a disposable WordPress with this plugin already active and Two Factor *not yet installed*, so you land on the Plugins screen and see the guided **"Install & activate Two Factor"** notice. A handful of sample users (across roles) are created so you can browse profiles. No local install needed; nothing is saved.
@@ -38,7 +38,8 @@ Require Email 2FA's dependency on Two Factor is *soft*: the Require Email 2FA pl
 1. **Forces 2FA for everyone (by default).** It ensures the (assumed) always-available,
    zero-setup **Email** provider is enabled for every user, so the login
    challenge appears for all accounts — including ones that never configured 2FA.
-   Enforcement can be scoped with **per-role exclusions**. (See Configuration.)
+   Enforcement can optionally be **narrowed to a capability** (e.g. administrators
+   only) and scoped with **per-role exclusions**. (See Configuration.)
 
    It *appends* Email rather than replacing the provider list, so users who set
    up a stronger factor (TOTP, hardware key / WebAuthn) keep it as their primary
@@ -212,11 +213,65 @@ It is deliberately built to be **impossible to dead-end**:
 See [`docs/TESTING-BLOCKING-MODE.md`](docs/TESTING-BLOCKING-MODE.md) for a manual test
 checklist and the `bin/blocking-mode-e2e.sh` end-to-end check.
 
+### Enforcement scope (who is required to use 2FA)
+
+**By default, forced 2FA applies to every user.** This is the security baseline and
+is unchanged across versions: the emailed floor covers all accounts, so the login
+challenge — and the [XML-RPC API-login hardening](#security-model) that rides on
+it — protect everyone, not just administrators.
+
+If you want to **narrow** enforcement to privileged accounts (opt-in), define the
+`FORCE_2FA_ENFORCED_CAPABILITY` constant in `wp-config.php`. The most common choice
+is administrators only:
+
+```php
+// wp-config.php — force 2FA only on users who can manage the site.
+define( 'FORCE_2FA_ENFORCED_CAPABILITY', 'manage_options' );
+```
+
+Any capability works — e.g. `'edit_posts'` to cover contributors and up. Leaving the
+constant undefined (or setting it to `''`) keeps the default: **all users**. You can
+also set it at runtime from a small site-specific plugin or mu-plugin via the
+`force_2fa_enforced_capability` filter:
+
+```php
+add_filter( 'force_2fa_enforced_capability', function () {
+	return 'manage_options'; // admins-only
+} );
+```
+
+> **Define it in `wp-config.php`, not as a plugin edit.** Unlike
+> `FORCE_2FA_EXCLUDED_ROLES`, this setting is read with `defined()` (like
+> `FORCE_2FA_DISABLE`), specifically so you can `define()` it in `wp-config.php`
+> without a "cannot redeclare constant" fatal.
+
+> **Narrowing the scope also narrows the API-login hardening.** Two Factor only gates
+> the API login of a user it treats as "using 2FA," so any account you move out of
+> scope can make XML-RPC logins *without* passing the [allowlist](#security-model)
+> — the same trade-off documented for excluded roles below. (The allowlist governs
+> XML-RPC only; REST Application-Password logins bypass Two Factor's authenticate gate
+> regardless — see the Security model.) Only narrow the scope if that is acceptable
+> for the accounts you're excluding.
+
+> **Why a capability, not the `administrator` role slug?** A capability check catches
+> super admins and any custom or plugin-defined role that grants admin access,
+> whereas hard-coding the `administrator` slug would silently miss them. On
+> **multisite** the check is **network-wide**: a user is in scope if they are a super
+> admin, or hold the capability on **any** site they belong to — not just the site
+> they log in through. (WordPress logins are network-wide, so a per-site check would
+> let an admin of one subsite sign in via another where they hold only a low role and
+> skip enforcement.) The role exclusion (`FORCE_2FA_EXCLUDED_ROLES`) is evaluated
+> across the user's sites in the same way.
+
+If you need a specific account included or excluded regardless of capability, use the
+`force_2fa_user_is_exempt` filter (below).
+
 ### Excluding roles from forced 2FA
 
-Enforcement applies to **all** users by default. To exempt specific roles, list
-their slugs (lowercase keys like `subscriber`, `customer` — not display names) in
-the `FORCE_2FA_EXCLUDED_ROLES` constant:
+You can also carve out specific roles from enforcement — either from the default
+all-users scope, or from a narrowed capability scope.
+List their slugs (lowercase keys like `subscriber`, `customer` — not display names)
+in the `FORCE_2FA_EXCLUDED_ROLES` constant:
 
 ```php
 const FORCE_2FA_EXCLUDED_ROLES = array( 'subscriber', 'customer' );
