@@ -24,6 +24,8 @@ abstract class TestCase extends BaseTestCase {
 		$GLOBALS['__force2fa_cleared_crons']        = array();
 		$GLOBALS['__force2fa_current_blog_id']      = 1;
 		$GLOBALS['__force2fa_options']              = array();
+		$GLOBALS['__force2fa_site_options']         = array();
+		$GLOBALS['__force2fa_deactivation_hooks']   = array();
 		$GLOBALS['__force2fa_network_active']       = array();
 		$GLOBALS['__force2fa_super_admins']         = array();
 		$GLOBALS['__force2fa_site_caps']            = array();

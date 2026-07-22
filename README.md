@@ -271,14 +271,20 @@ checklist and the `bin/blocking-mode-e2e.sh` end-to-end check.
 
 ### Enforcement scope (who is required to use 2FA)
 
-**By default, forced 2FA applies to every user.** This is the security baseline and
-is unchanged across versions: the emailed floor covers all accounts, so the login
-challenge — and the [XML-RPC API-login hardening](#security-model) that rides on
-it — protect everyone, not just administrators.
+**By default, forced 2FA applies to every user.** This is the security baseline: the
+emailed floor covers all accounts, so the login challenge protects everyone, not just
+administrators. (The [XML-RPC API-login hardening](#security-model) is enforced for all
+accounts *regardless* of this scope — narrowing it never opens XML-RPC.)
 
-If you want to **narrow** enforcement to privileged accounts (opt-in), define the
-`FORCE_2FA_ENFORCED_CAPABILITY` constant in `wp-config.php`. The most common choice
-is administrators only:
+> **No `wp-config.php` access? Pick the scope right after activating.** A one-time
+> admin notice appears on first run with a radio — **All users / Editors and up /
+> Administrators only** (administrators pre-selected) — and one click saves it. Until
+> you choose, the secure default (all users) applies. To change it later, deactivate and
+> reactivate the plugin. Defining the constant below suppresses the prompt (code wins).
+
+If you want to **narrow** enforcement to privileged accounts, define the
+`FORCE_2FA_ENFORCED_CAPABILITY` constant in `wp-config.php` (this always overrides the
+first-run choice). The most common choice is administrators only:
 
 ```php
 // wp-config.php — force 2FA only on users who can manage the site.

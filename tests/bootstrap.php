@@ -41,6 +41,13 @@ function register_activation_hook( $file, $cb ) {
 	return true;
 }
 
+// Deactivation hook: registered at load for the scope-choice clear. Recorded so a
+// test can assert the wiring; the callback runs only on a real deactivation.
+function register_deactivation_hook( $file, $cb ) {
+	$GLOBALS['__force2fa_deactivation_hooks'][] = $cb;
+	return true;
+}
+
 /**
  * Returns a per-hook override when a test set one, otherwise passes the value
  * through unchanged (WordPress's default behaviour with no filters attached).
@@ -98,9 +105,33 @@ function is_multisite() {
 }
 
 // Delete a network/site option. Records the keys deleted so the uninstall test can
-// assert exactly which options were purged, without a real WordPress options store.
+// assert exactly which options were purged, and also removes it from the network-option
+// store so get_site_option() reflects the deletion (scope-choice lifecycle tests).
 function delete_site_option( $option ) {
 	$GLOBALS['__force2fa_deleted_site_options'][] = $option;
+	unset( $GLOBALS['__force2fa_site_options'][ $option ] );
+	return true;
+}
+
+// --- Options store stubs (single-site: __force2fa_options; network: __force2fa_site_options) ---
+
+function update_option( $name, $value ) {
+	$GLOBALS['__force2fa_options'][ $name ] = $value;
+	return true;
+}
+
+function delete_option( $name ) {
+	unset( $GLOBALS['__force2fa_options'][ $name ] );
+	return true;
+}
+
+function get_site_option( $name, $default_value = false ) {
+	$store = $GLOBALS['__force2fa_site_options'] ?? array();
+	return array_key_exists( $name, $store ) ? $store[ $name ] : $default_value;
+}
+
+function update_site_option( $name, $value ) {
+	$GLOBALS['__force2fa_site_options'][ $name ] = $value;
 	return true;
 }
 
