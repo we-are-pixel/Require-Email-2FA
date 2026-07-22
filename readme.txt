@@ -155,15 +155,53 @@ API-login hardening (Two Factor only gates the API login of users it treats as "
 Application-Password logins bypass Two Factor's authenticate gate). Per-role
 exclusions still apply on top.
 
+= Where do these settings go — wp-config.php or a filter? =
+
+Every `FORCE_2FA_*` constant can go in **wp-config.php** — they are all read with
+`defined()`, so `define()`-ing any of them is safe (no "cannot redeclare constant"
+fatal): `FORCE_2FA_DISABLE`, `FORCE_2FA_ENFORCED_CAPABILITY`, `FORCE_2FA_EXCLUDED_ROLES`,
+`FORCE_2FA_API_LOGIN_ALLOWLIST`, `FORCE_2FA_BLOCKING_MODE`, `FORCE_2FA_DISABLE_SELF_UPDATE`.
+
+Filters must NOT go in wp-config.php — `add_filter()` is not defined yet when
+wp-config.php runs, so a filter there fatals. Put `force_2fa_enforced_capability`,
+`force_2fa_excluded_roles`, `force_2fa_api_login_allowlist`, `force_2fa_user_is_exempt`,
+etc. in a small plugin, a companion mu-plugin, or your theme's functions.php. A filter
+overrides its constant; the `FORCE_2FA_DISABLE` kill switch is constant-only.
+
+If you use the mu-loader ("cannot be deactivated" mode), keep filter-based config in a
+companion mu-plugin so it is force-loaded alongside the plugin. Create a second flat
+file in wp-content/mu-plugins/, e.g. force-2fa-config.php:
+
+`
+<?php
+// wp-content/mu-plugins/force-2fa-config.php
+add_filter( 'force_2fa_excluded_roles', function () {
+	return array( 'subscriber', 'customer' );
+} );
+add_filter( 'force_2fa_api_login_allowlist', function () {
+	return array( 'svc-deploy', 'svc-monitoring' );
+} );
+`
+
+Load order is fine: the plugin reads these filters lazily during login (when Two
+Factor evaluates a user's providers), long after every mu-plugin, plugin, and theme
+has registered its filters — so mu-loading the plugin early never races the config.
+
 = How do I exempt a role from forced 2FA? =
 
-List the role slugs (lowercase keys such as `subscriber`, not display names) in
-the `FORCE_2FA_EXCLUDED_ROLES` constant. This carves roles out of the enforcement
-*scope* (see above); a user is exempt only if every role they hold is on the list,
-so excluding a low-privilege role can never accidentally exempt a privileged
-account that also holds a higher role.
+Set the role slugs (lowercase keys such as `subscriber`, not display names) in the
+`FORCE_2FA_EXCLUDED_ROLES` constant in wp-config.php:
 
-You can also override the effective list without editing this plugin:
+`
+define( 'FORCE_2FA_EXCLUDED_ROLES', array( 'subscriber', 'customer' ) );
+`
+
+This carves roles out of the enforcement *scope* (see above); a user is exempt only if
+every role they hold is on the list, so excluding a low-privilege role can never
+accidentally exempt a privileged account that also holds a higher role.
+
+You can also set the effective list at runtime with the `force_2fa_excluded_roles`
+filter (from a plugin, a companion mu-plugin, or your theme — not wp-config.php):
 
 `
 add_filter( 'force_2fa_excluded_roles', function () {
@@ -173,9 +211,14 @@ add_filter( 'force_2fa_excluded_roles', function () {
 
 = How do I let an integration log in over XML-RPC? =
 
-Add its user ID or login to `FORCE_2FA_API_LOGIN_ALLOWLIST`, and have it
-authenticate with an Application Password. A real-password XML-RPC login is always
-denied, even for allowlisted accounts.
+Add its user ID or login to the `FORCE_2FA_API_LOGIN_ALLOWLIST` constant in
+wp-config.php (or via the `force_2fa_api_login_allowlist` filter from a plugin /
+companion mu-plugin / theme), and have it authenticate with an Application Password.
+A real-password XML-RPC login is always denied, even for allowlisted accounts.
+
+`
+define( 'FORCE_2FA_API_LOGIN_ALLOWLIST', array( 123, 'svc_headless' ) );
+`
 
 Important: this allowlist governs XML-RPC, not the REST API. Two Factor's only
 API-login gate runs on the `authenticate` filter, which XML-RPC uses; REST

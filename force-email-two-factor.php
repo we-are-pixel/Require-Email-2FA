@@ -352,48 +352,42 @@ function force_2fa_activation_blocked( $is_multisite, $network_wide ) {
 }
 
 /**
- * Roles to EXCLUDE from forced two-factor.
+ * Effective list of role slugs to EXCLUDE from forced two-factor.
  *
- * Default is an empty array → enforcement applies to ALL users. Add role slugs
- * (the lowercase keys, e.g. 'subscriber', 'customer', not display names) to exempt
- * those roles from having Email auto-enabled:
+ * Default is empty → enforcement applies to ALL in-scope users. Add role slugs (the
+ * lowercase keys, e.g. 'subscriber', 'customer', not display names) to exempt those
+ * roles from having Email auto-enabled — set the constant in wp-config.php:
  *
- *     const FORCE_2FA_EXCLUDED_ROLES = array( 'subscriber', 'customer' );
+ *     define( 'FORCE_2FA_EXCLUDED_ROLES', array( 'subscriber', 'customer' ) );
  *
- * Security rule (see force_2fa_user_is_exempt): a user is exempt ONLY if EVERY
- * role they hold is on this list. A user with both an excluded role and a
- * non-excluded one (e.g. subscriber + editor) is still enforced, so excluding a
- * low-privilege role can never accidentally exempt a privileged account that
- * also holds a higher role.
+ * The constant is read with defined() (NOT declared in this file — so, like
+ * FORCE_2FA_DISABLE / FORCE_2FA_ENFORCED_CAPABILITY, defining it in wp-config.php can
+ * never clash with a plugin-side declaration). The 'force_2fa_excluded_roles' filter
+ * overrides the constant and makes the value injectable for unit tests; filters must
+ * be registered from a plugin, a companion mu-plugin, or a theme — NOT wp-config.php,
+ * where add_filter() is not yet loaded.
  *
- * THREAT MODEL / WARNING: exclusions are configured in code (this constant or
- * the force_2fa_user_is_exempt filter), which requires filesystem-level access —
- * a trust level that can already disable 2FA entirely. So exclusions are not an
- * attacker-facing control; they are an operator convenience. There is no hard
- * floor protecting privileged accounts: if you exclude a role that a super admin
- * or administrator holds *as their only role on a site*, that account WILL be
- * exempted on that site. Choose excluded roles deliberately. To exempt or
- * re-include a specific account surgically, prefer the force_2fa_user_is_exempt
- * filter over broad role exclusions.
+ * Security rule (see force_2fa_user_is_exempt): a user is exempt ONLY if EVERY role
+ * they hold is on this list. A user with both an excluded role and a non-excluded one
+ * (e.g. subscriber + editor) is still enforced, so excluding a low-privilege role can
+ * never accidentally exempt a privileged account that also holds a higher role.
  *
- * Exclusion means "don't FORCE 2FA" — it does not forbid it. An excluded user
- * who configured their own 2FA keeps it.
- *
- * @var string[] Role slugs exempt from forced two-factor.
- */
-const FORCE_2FA_EXCLUDED_ROLES = array();
-
-/**
- * Effective list of excluded role slugs.
- *
- * Defaults to the FORCE_2FA_EXCLUDED_ROLES constant; the 'force_2fa_excluded_roles'
- * filter lets code override it at runtime (e.g. environment-specific config) and
- * makes the value injectable for unit tests.
+ * THREAT MODEL / WARNING: exclusions are configured in code (this constant or the
+ * force_2fa_user_is_exempt filter), which requires filesystem-level access — a trust
+ * level that can already disable 2FA entirely. So exclusions are not an attacker-facing
+ * control; they are an operator convenience. There is no hard floor protecting
+ * privileged accounts: if you exclude a role that a super admin or administrator holds
+ * *as their only role on a site*, that account WILL be exempted. Choose excluded roles
+ * deliberately; prefer the force_2fa_user_is_exempt filter to re-include a specific
+ * account surgically. Exclusion means "don't FORCE 2FA" — it does not forbid it; an
+ * excluded user who configured their own 2FA keeps it.
  *
  * @return string[]
  */
 function force_2fa_excluded_roles() {
-	return (array) apply_filters( 'force_2fa_excluded_roles', FORCE_2FA_EXCLUDED_ROLES );
+	$roles = defined( 'FORCE_2FA_EXCLUDED_ROLES' ) ? FORCE_2FA_EXCLUDED_ROLES : array();
+
+	return (array) apply_filters( 'force_2fa_excluded_roles', $roles );
 }
 
 /**
@@ -414,10 +408,9 @@ function force_2fa_excluded_roles() {
  * set, users who lack the capability are treated as exempt (see
  * force_2fa_exemption_decision); FORCE_2FA_EXCLUDED_ROLES still applies on top.
  *
- * The constant is deliberately NOT declared here (unlike FORCE_2FA_EXCLUDED_ROLES,
- * and like FORCE_2FA_DISABLE / FORCE_2FA_BLOCKING_MODE): it is read with defined()
- * so an operator can define() it in wp-config.php — which loads first — without a
- * fatal "cannot redeclare constant" error.
+ * Like every FORCE_2FA_* constant, it is deliberately NOT declared in this file: it is
+ * read with defined() so an operator can define() it in wp-config.php — which loads
+ * first — without a fatal "cannot redeclare constant" error.
  *
  * Why a CAPABILITY, not a role slug: capabilities catch super admins and any custom
  * or plugin-defined role that grants administrative access, whereas a hard-coded
@@ -794,26 +787,23 @@ function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
  *   2. It has the least-privilege role the integration actually needs.
  *   3. You remove it from this list the moment the integration is retired.
  *
- * Leave the array EMPTY to deny ALL API logins (no service accounts permitted).
+ * Leave the array EMPTY (the default) to deny ALL API logins (no service accounts
+ * permitted). Set it in wp-config.php:
  *
- * @var array<int|string> User IDs and/or user_login values permitted on the API path.
- */
-const FORCE_2FA_API_LOGIN_ALLOWLIST = array(
-	// 123,            // by user ID (preferred — stable across login renames)
-	// 'svc_headless', // by user_login (case-insensitive)
-);
-
-/**
- * Effective API-login allowlist.
+ *     define( 'FORCE_2FA_API_LOGIN_ALLOWLIST', array( 123, 'svc_headless' ) );
  *
- * Defaults to the FORCE_2FA_API_LOGIN_ALLOWLIST constant; the
- * 'force_2fa_api_login_allowlist' filter lets code override it at runtime and
- * makes the value injectable for unit tests.
+ * The constant is read with defined() (NOT declared in this file — so, like the other
+ * FORCE_2FA_* constants, defining it in wp-config.php can never clash with a plugin-side
+ * declaration). The 'force_2fa_api_login_allowlist' filter overrides the constant;
+ * register it from a plugin, a companion mu-plugin, or a theme — NOT wp-config.php,
+ * where add_filter() is not yet loaded.
  *
- * @return array<int|string>
+ * @return array<int|string> User IDs and/or user_login values permitted on the API path.
  */
 function force_2fa_api_login_allowlist() {
-	return (array) apply_filters( 'force_2fa_api_login_allowlist', FORCE_2FA_API_LOGIN_ALLOWLIST );
+	$allowlist = defined( 'FORCE_2FA_API_LOGIN_ALLOWLIST' ) ? FORCE_2FA_API_LOGIN_ALLOWLIST : array();
+
+	return (array) apply_filters( 'force_2fa_api_login_allowlist', $allowlist );
 }
 
 /**
