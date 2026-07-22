@@ -151,6 +151,62 @@ Before enabling enforcement on a production site:
 
 ## Configuration
 
+There is **no options page** — every setting is a `wp-config.php` constant or a filter.
+
+### Where configuration goes
+
+**Every `FORCE_2FA_*` constant can go in `wp-config.php`.** They are all read with
+`defined()`, so `define()`-ing any of them is safe — there is no in-file `const` to
+clash with, and no "cannot redeclare constant" fatal:
+
+```php
+// wp-config.php
+define( 'FORCE_2FA_ENFORCED_CAPABILITY', 'manage_options' ); // admins-only scope
+define( 'FORCE_2FA_EXCLUDED_ROLES', array( 'subscriber' ) );  // carve out a role
+define( 'FORCE_2FA_API_LOGIN_ALLOWLIST', array( 'svc-deploy' ) );
+define( 'FORCE_2FA_BLOCKING_MODE', true );
+```
+
+**Filters must NOT go in `wp-config.php`.** `add_filter()` is not defined yet when
+`wp-config.php` runs (WordPress loads it *before* `wp-includes/plugin.php`), so a filter
+there fatals with *"call to undefined function add_filter()"*. Put filters —
+`force_2fa_enforced_capability`, `force_2fa_excluded_roles`,
+`force_2fa_api_login_allowlist`, `force_2fa_user_is_exempt`,
+`force_2fa_blocking_mode_enabled`, `force_2fa_self_update_enabled` — where `add_filter()`
+exists: a small plugin, a **companion mu-plugin**, or your theme's `functions.php`.
+
+Two rules worth remembering:
+
+- **A filter overrides its constant.** If you set both, the filter wins (it is applied
+  over the constant's value). Handy for environment-specific overrides; surprising if
+  you forget a stray filter is there.
+- **The kill switch is constant-only.** `FORCE_2FA_DISABLE` is checked at load and has no
+  filter, so it can't be accidentally toggled by one — it's a reliable break-glass.
+
+> [!TIP]
+> **Using the [mu-loader](#optional-cannot-be-deactivated-mode-mu-loader)?** Keep filter-based
+> config in a **companion mu-plugin** — a second flat file in `wp-content/mu-plugins/` — so
+> it's force-loaded and un-deactivatable alongside the plugin (the same reason you reached for
+> the mu-loader):
+>
+> ```php
+> <?php
+> // wp-content/mu-plugins/force-2fa-config.php
+> add_filter( 'force_2fa_excluded_roles', function () {
+>     return array( 'subscriber', 'customer' );
+> } );
+> add_filter( 'force_2fa_api_login_allowlist', function () {
+>     return array( 'svc-deploy', 'svc-monitoring' );
+> } );
+> ```
+>
+> Load order is not a concern: the plugin reads these filters **lazily at enforcement time**
+> (during login, when Two Factor evaluates a user's providers) — long after every mu-plugin,
+> plugin, and theme has registered its filters. So the early mu-loader load never races the
+> config. `functions.php` also works, but a companion mu-plugin is more robust: a theme switch
+> silently drops `functions.php` config (it fails safe — no exclusions means everyone enforced,
+> no allowlist means API logins denied — but it's easy to forget).
+
 ### Optional: blocking mode (require setup before access)
 
 By default this plugin uses a **soft floor**: it appends the Email provider so the
@@ -240,10 +296,10 @@ add_filter( 'force_2fa_enforced_capability', function () {
 } );
 ```
 
-> **Define it in `wp-config.php`, not as a plugin edit.** Unlike
-> `FORCE_2FA_EXCLUDED_ROLES`, this setting is read with `defined()` (like
-> `FORCE_2FA_DISABLE`), specifically so you can `define()` it in `wp-config.php`
-> without a "cannot redeclare constant" fatal.
+> **Set it in `wp-config.php`.** Like every `FORCE_2FA_*` constant, it is read with
+> `defined()`, so `define()`-ing it in `wp-config.php` is safe — no "cannot redeclare
+> constant" fatal. A `force_2fa_enforced_capability` filter, if you add one, overrides
+> the constant — see [Where configuration goes](#where-configuration-goes).
 
 > **Narrowing the scope also narrows the API-login hardening.** Two Factor only gates
 > the API login of a user it treats as "using 2FA," so any account you move out of
@@ -271,14 +327,16 @@ If you need a specific account included or excluded regardless of capability, us
 You can also carve out specific roles from enforcement — either from the default
 all-users scope, or from a narrowed capability scope.
 List their slugs (lowercase keys like `subscriber`, `customer` — not display names)
-in the `FORCE_2FA_EXCLUDED_ROLES` constant:
+in the `FORCE_2FA_EXCLUDED_ROLES` constant in `wp-config.php`:
 
 ```php
-const FORCE_2FA_EXCLUDED_ROLES = array( 'subscriber', 'customer' );
+// wp-config.php
+define( 'FORCE_2FA_EXCLUDED_ROLES', array( 'subscriber', 'customer' ) );
 ```
 
-Or, without editing this plugin file, override the effective list from a small
-site-specific plugin or mu-plugin:
+Or set the effective list at runtime with the `force_2fa_excluded_roles` filter from a
+plugin, a companion mu-plugin, or your theme — **not `wp-config.php`** (see
+[Where configuration goes](#where-configuration-goes)):
 
 ```php
 add_filter( 'force_2fa_excluded_roles', function () {
