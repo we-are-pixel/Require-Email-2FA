@@ -185,4 +185,37 @@ echo "==> Allowlisted account + REAL password must be DENIED (Application Passwo
 assert_denied "allowlisted + real password" "$(xmlrpc_get_users_blogs svc "$SVC_REAL_PW")"
 echo "    denied, as expected (condition (b): a real-password API login never bypasses)"
 
+# --- Decoupling from the interactive-2FA scope -------------------------------------
+# Narrow enforcement to administrators only. 'svc' and 'other' are editors, so they are
+# now OUT of the 2FA scope — meaning Two Factor no longer treats them as "using 2FA" and
+# its own API-login gate no longer covers them. The plugin's own authenticate-path gate
+# must still hold the XML-RPC allowlist for them. Before this decoupling, a non-allowlisted
+# out-of-scope account could log in over XML-RPC freely; that must NOT happen.
+echo "==> Narrow scope to admins-only (editors now out of the 2FA scope)"
+cat > "$WP/wp-content/mu-plugins/20-admins-only.php" <<'PHP'
+<?php
+// E2E only: opt in to admins-only enforcement scope.
+add_filter( 'force_2fa_enforced_capability', function () { return 'manage_options'; } );
+PHP
+
+# Sanity: confirm the two editor service accounts are now OUT of scope (not using 2FA),
+# so this leg genuinely exercises the decoupled gate rather than Two Factor's.
+wp eval '
+$svc   = get_user_by( "login", "svc" );
+$other = get_user_by( "login", "other" );
+if ( Two_Factor_Core::is_user_using_two_factor( $svc->ID ) || Two_Factor_Core::is_user_using_two_factor( $other->ID ) ) {
+    fwrite( STDERR, "FAIL: editors are still in the 2FA scope; the admins-only narrowing did not take\n" );
+    exit( 1 );
+}
+echo "FORCE2FA_OUT_OF_SCOPE_OK\n";
+'
+
+echo "==> Out-of-scope allowlisted account + Application Password must still be ALLOWED"
+assert_allowed "out-of-scope allowlisted + app password" "$(xmlrpc_get_users_blogs svc "$SVC_APP")"
+echo "    allowed, as expected (the allowlist gate is scope-independent)"
+
+echo "==> Out-of-scope NON-allowlisted account + Application Password must still be DENIED"
+assert_denied "out-of-scope non-allowlisted + app password" "$(xmlrpc_get_users_blogs other "$OTHER_APP")"
+echo "    denied, as expected (allowlist enforced regardless of 2FA scope — the decoupling)"
+
 echo "==> API-login (XML-RPC) E2E passed."

@@ -418,14 +418,14 @@ function force_2fa_excluded_roles() {
  * network-wide (super admins, or the capability on any of the user's sites), since
  * WordPress logins are network-wide — see force_2fa_user_has_capability().
  *
- * SECURITY NOTE: narrowing the scope also narrows the API-login hardening, because
- * Two Factor only invokes the allowlist gate for users it considers "using 2FA."
- * Any account now out of scope can make XML-RPC API logins without passing the
- * allowlist — the same trade-off documented for FORCE_2FA_EXCLUDED_ROLES. (The
- * allowlist governs XML-RPC, not REST; REST Application-Password logins bypass Two
- * Factor's authenticate gate entirely — see the API-login allowlist notes below.)
- * Widening the scope only ever adds enforcement. Like all operator config here, this
- * requires filesystem access and is not an attacker-facing control.
+ * The XML-RPC API-login allowlist is INDEPENDENT of this scope: the plugin's own
+ * authenticate-path gate (force_2fa_gate_api_login) holds every XML-RPC login to the
+ * allowlist + Application-Password policy for ALL users, whether or not they are in the
+ * enforcement scope. So narrowing this capability never weakens who may log in over
+ * XML-RPC. (The allowlist governs XML-RPC, not REST; REST Application-Password logins
+ * bypass the authenticate chain entirely — see the API-login allowlist notes below.)
+ * Like all operator config here, this requires filesystem access and is not an
+ * attacker-facing control.
  *
  * @return string Capability name, or '' to enforce on all users (the default).
  */
@@ -904,6 +904,84 @@ function force_2fa_filter_api_login_enable( $enable, $user ) {
 
 	// (a) ...and only for named service accounts.
 	return force_2fa_user_is_api_allowlisted( $user );
+}
+
+/**
+ * Pure decision: whether an XML-RPC login must be DENIED by the API-login gate.
+ *
+ * The allowlist policy is INDEPENDENT of the interactive-2FA enforcement scope: an
+ * XML-RPC login is permitted only for an allowlisted account that authenticated with an
+ * Application Password — for EVERY user, whether or not they are in the
+ * FORCE_2FA_ENFORCED_CAPABILITY scope or carved out by FORCE_2FA_EXCLUDED_ROLES. So
+ * narrowing 2FA enforcement can never widen who may log in over XML-RPC.
+ *
+ * Returns false (do NOT deny — pass the login through unchanged) when the gate does not
+ * apply: not an XML-RPC request, Two Factor inactive (the plugin's soft-dependency
+ * no-op), or core did not authenticate a user (let the existing error stand). Otherwise
+ * deny unless the account is allowlisted AND used an Application Password this request.
+ *
+ * @param bool $is_xmlrpc              Whether this is an XML-RPC request (XMLRPC_REQUEST).
+ * @param bool $dependency_met         Whether Two Factor is active (force_2fa_dependency_met()).
+ * @param bool $has_authenticated_user Whether core resolved a WP_User (vs error/anonymous).
+ * @param bool $used_app_password      Whether THIS user authenticated via Application Password.
+ * @param bool $is_allowlisted         Whether the user is on the API-login allowlist.
+ * @return bool True if the login must be denied.
+ */
+function force_2fa_api_login_should_deny( $is_xmlrpc, $dependency_met, $has_authenticated_user, $used_app_password, $is_allowlisted ) {
+	if ( ! $is_xmlrpc || ! $dependency_met || ! $has_authenticated_user ) {
+		return false;
+	}
+
+	return ! ( $used_app_password && $is_allowlisted );
+}
+
+/**
+ * Gate the XML-RPC authenticate path to the service-account allowlist, for ALL users.
+ *
+ * Hooked to 'authenticate' at a late priority (after core has resolved the user). This
+ * is what decouples the API-login hardening from the interactive-2FA scope: Two Factor's
+ * own 'two_factor_user_api_login_enable' gate only runs for users it considers "using
+ * 2FA", so a user out of the enforcement scope would otherwise slip past the allowlist.
+ * This gate applies the same allowlist + Application-Password policy to every XML-RPC
+ * login. (The 'two_factor_user_api_login_enable' filter is kept as-is — for in-scope
+ * users it expresses the identical decision inside Two Factor's flow; this gate extends
+ * that coverage to everyone. The two only ever ADD denials; they never loosen.)
+ *
+ * Deliberately scoped to XML-RPC only: interactive logins (no XMLRPC_REQUEST) fall
+ * through to the normal 2FA challenge, and REST Application-Password logins authenticate
+ * via core's 'determine_current_user' path and never reach 'authenticate' — so, as
+ * documented, this does not gate REST. Preserves the soft dependency: no-ops when Two
+ * Factor is inactive.
+ *
+ * @param WP_User|WP_Error|null $user     The user core authenticated (or an error).
+ * @param string                $username Unused.
+ * @param string                $password Unused.
+ * @return WP_User|WP_Error|null The user unchanged, or a WP_Error denying the login.
+ */
+function force_2fa_gate_api_login( $user, $username = '', $password = '' ) {
+	unset( $username, $password );
+
+	$has_user          = $user instanceof WP_User;
+	$app_password_user = force_2fa_app_password_user_id();
+	$used_app_password = $has_user && $app_password_user > 0 && (int) $user->ID === $app_password_user;
+	$is_allowlisted    = $has_user && force_2fa_user_is_api_allowlisted( $user );
+
+	$deny = force_2fa_api_login_should_deny(
+		defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST,
+		force_2fa_dependency_met(),
+		$has_user,
+		$used_app_password,
+		$is_allowlisted
+	);
+
+	if ( $deny ) {
+		return new WP_Error(
+			'force_2fa_api_login_denied',
+			__( 'XML-RPC logins are restricted to allowlisted service accounts authenticating with an Application Password.', 'force-email-two-factor' )
+		);
+	}
+
+	return $user;
 }
 
 /**
@@ -1852,6 +1930,12 @@ function force_2fa_site_health_self_update() {
 function force_2fa_register_hooks() {
 	add_filter( 'two_factor_enabled_providers_for_user', 'force_2fa_filter_enabled_providers', 10, 2 );
 	add_filter( 'two_factor_user_api_login_enable', 'force_2fa_filter_api_login_enable', 10, 2 );
+
+	// Own gate on the authenticate path so the XML-RPC allowlist applies to ALL users,
+	// independent of the interactive-2FA enforcement scope (Two Factor's gate above only
+	// covers users it treats as "using 2FA"). Late priority: run after core has resolved
+	// the user. See force_2fa_gate_api_login().
+	add_filter( 'authenticate', 'force_2fa_gate_api_login', 90, 3 );
 
 	// Bind the API-login app-password check to the account that authenticated (see
 	// force_2fa_filter_api_login_enable): record the user on each app-password auth.

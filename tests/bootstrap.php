@@ -271,6 +271,27 @@ class Force2FA_WpDieException extends \RuntimeException {}
 
 // --- WordPress class stubs ----------------------------------------------------
 
+// Minimal WP_Error: enough for the API-login gate to signal a denied authenticate
+// result and for a test to read the error code back.
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		public $errors = array();
+
+		public function __construct( $code = '', $message = '' ) {
+			if ( '' !== $code ) {
+				$this->errors[ $code ][] = $message;
+			}
+		}
+
+		public function get_error_code() {
+			foreach ( $this->errors as $code => $messages ) {
+				return $code;
+			}
+			return '';
+		}
+	}
+}
+
 if ( ! class_exists( 'WP_User' ) ) {
 	class WP_User {
 		public $ID;
