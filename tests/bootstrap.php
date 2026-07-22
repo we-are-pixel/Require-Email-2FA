@@ -218,6 +218,10 @@ function is_super_admin( $user_id = 0 ) {
 // A test lists a user's site IDs in $GLOBALS['__force2fa_user_blogs'][ $user_id ];
 // each is returned as an object with a userblog_id property, mirroring core.
 function get_blogs_of_user( $user_id ) {
+	// Count invocations so a test can assert the memoized exemption avoids re-running
+	// the per-site loop (see MemoizationTest).
+	$GLOBALS['__force2fa_get_blogs_calls'] = ( $GLOBALS['__force2fa_get_blogs_calls'] ?? 0 ) + 1;
+
 	$blogs = array();
 	foreach ( $GLOBALS['__force2fa_user_blogs'][ $user_id ] ?? array() as $site_id ) {
 		$blogs[] = (object) array( 'userblog_id' => (int) $site_id );

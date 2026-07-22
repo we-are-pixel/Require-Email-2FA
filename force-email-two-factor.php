@@ -704,6 +704,9 @@ function force_2fa_user_has_capability( WP_User $user, $capability ) {
 
 	// Per-site capability check across the user's sites. user_can_for_site() is
 	// guaranteed by the plugin's WordPress 6.8 minimum (it shipped in 6.7).
+	// get_blogs_of_user() intentionally omits archived/spam/deleted sites; that is
+	// safe here because those sites block front-end access (deleted ones are gone),
+	// so there is no authenticatable session tied to a privilege held only there.
 	foreach ( get_blogs_of_user( $user->ID ) as $blog ) {
 		if ( user_can_for_site( $user, (int) $blog->userblog_id, $capability ) ) {
 			return true;
@@ -732,6 +735,9 @@ function force_2fa_user_network_roles( WP_User $user ) {
 		return (array) $user->roles;
 	}
 
+	// get_blogs_of_user() omits archived/spam/deleted sites — safe here for the same
+	// reason as in force_2fa_user_has_capability(): no live session can be tied to a
+	// role held only on a site that blocks access.
 	$roles = (array) $user->roles;
 	foreach ( get_blogs_of_user( $user->ID ) as $blog ) {
 		$roles = array_merge( $roles, force_2fa_user_roles_on_site( $user->ID, (int) $blog->userblog_id ) );
@@ -767,20 +773,33 @@ function force_2fa_user_roles_on_site( $user_id, $site_id ) {
 }
 
 /**
- * Whether a user is exempt from forced two-factor.
+ * The computed (pre-filter) exemption for a user — memoized per request.
  *
- * Glue: gathers whether the user holds the enforced capability (network-wide) and
- * their role set, then delegates the decision to force_2fa_exemption_decision(). By
- * default the enforced capability is '' (no gate), so EVERY user is in scope; defining
- * FORCE_2FA_ENFORCED_CAPABILITY narrows enforcement (e.g. admins-only). The
- * FORCE_2FA_EXCLUDED_ROLES denylist further carves out roles among in-scope users,
- * and the 'force_2fa_user_is_exempt' filter allows programmatic overrides for edge
- * cases (e.g. a specific user ID) without editing config.
+ * This is the expensive half: on multisite it can iterate the user's sites (once in
+ * force_2fa_user_has_capability(), once in force_2fa_user_network_roles()), each with
+ * a switch_to_blog()/user load. Two Factor may call the enabled-providers filter
+ * several times per request, and blocking mode evaluates it again, so the result is
+ * cached per (user, current site) for the remainder of the request.
+ *
+ * Correctness: the value only depends on the user's network-wide roles/capabilities
+ * and the (request-stable) FORCE_2FA_* config, so a per-request cache is safe. It is
+ * also flushed per user on 'clean_user_cache' (force_2fa_flush_exemption_cache),
+ * which WordPress fires when a user's cached data is invalidated (role/membership
+ * changes), so a mid-request mutation is picked up too. The cache is keyed on the
+ * current site as well: our own computation is network-wide (site-independent), but
+ * keying on the site keeps the memo correct if that ever changes.
  *
  * @param WP_User $user The resolved user.
- * @return bool True if forced 2FA should be skipped for this user.
+ * @return bool True if forced 2FA should be skipped for this user (before the filter).
  */
-function force_2fa_user_is_exempt( WP_User $user ) {
+function force_2fa_compute_exemption( WP_User $user ) {
+	$user_id = (int) $user->ID;
+	$blog_id = (int) get_current_blog_id();
+
+	if ( isset( $GLOBALS['force_2fa_exempt_cache'][ $user_id ][ $blog_id ] ) ) {
+		return $GLOBALS['force_2fa_exempt_cache'][ $user_id ][ $blog_id ];
+	}
+
 	$enforced_capability = force_2fa_enforced_capability();
 	$has_capability      = force_2fa_user_has_capability( $user, $enforced_capability );
 	$excluded_roles      = force_2fa_normalize_string_list( force_2fa_excluded_roles() );
@@ -798,6 +817,50 @@ function force_2fa_user_is_exempt( WP_User $user ) {
 		$enforced_capability,
 		$has_capability
 	);
+
+	$GLOBALS['force_2fa_exempt_cache'][ $user_id ][ $blog_id ] = $exempt;
+
+	return $exempt;
+}
+
+/**
+ * Flush the per-request exemption memo.
+ *
+ * Hooked to 'clean_user_cache' (which passes the affected user ID) so a user's cached
+ * decision is dropped whenever WordPress invalidates their user cache — e.g. a role or
+ * site-membership change. With no argument, clears the whole memo.
+ *
+ * @param int|WP_User $user_id Affected user ID (or user); 0/empty clears everything.
+ * @return void
+ */
+function force_2fa_flush_exemption_cache( $user_id = 0 ) {
+	if ( $user_id instanceof WP_User ) {
+		$user_id = $user_id->ID;
+	}
+
+	if ( $user_id ) {
+		unset( $GLOBALS['force_2fa_exempt_cache'][ (int) $user_id ] );
+		return;
+	}
+
+	$GLOBALS['force_2fa_exempt_cache'] = array();
+}
+
+/**
+ * Whether a user is exempt from forced two-factor.
+ *
+ * Glue: takes the memoized computation (capability scope + excluded roles, evaluated
+ * network-wide on multisite — see force_2fa_compute_exemption) and always applies the
+ * 'force_2fa_user_is_exempt' filter so programmatic overrides stay dynamic per call.
+ * By default the enforced capability is '' (no gate), so EVERY user is in scope;
+ * defining FORCE_2FA_ENFORCED_CAPABILITY narrows enforcement (e.g. admins-only), and
+ * FORCE_2FA_EXCLUDED_ROLES further carves out roles among in-scope users.
+ *
+ * @param WP_User $user The resolved user.
+ * @return bool True if forced 2FA should be skipped for this user.
+ */
+function force_2fa_user_is_exempt( WP_User $user ) {
+	$exempt = force_2fa_compute_exemption( $user );
 
 	/**
 	 * Filter the per-user exemption from forced two-factor.
@@ -2162,6 +2225,11 @@ function force_2fa_register_hooks() {
 	// Bind the API-login app-password check to the account that authenticated (see
 	// force_2fa_filter_api_login_enable): record the user on each app-password auth.
 	add_action( 'application_password_did_authenticate', 'force_2fa_note_app_password_user', 10, 1 );
+
+	// Drop a user's memoized exemption when WordPress invalidates their user cache
+	// (role/membership changes fire this), so a mid-request mutation isn't served stale
+	// from force_2fa_compute_exemption()'s per-request cache.
+	add_action( 'clean_user_cache', 'force_2fa_flush_exemption_cache', 10, 1 );
 
 	// Optional blocking mode: gate interactive requests from users who have not yet
 	// configured 2FA, redirecting them to their profile's setup UI. No-ops entirely

@@ -340,6 +340,10 @@ never opens XML-RPC to accounts left out of the interactive challenge.
   constant". Every FORCE_2FA_* constant is now safe to define in wp-config.php.
 * Docs: a "Where configuration goes" section — constants in wp-config.php, filters in a
   plugin/companion mu-plugin/theme — plus a companion-mu-plugin example.
+* Performance: the per-user enforcement-scope evaluation is memoized for the duration of
+  a request (flushed per user on `clean_user_cache`), so the network-wide capability/role
+  lookup no longer repeats each time Two Factor reads a user's providers. No behavior
+  change.
 
 = 1.12.0 =
 * New **optional capability-scoping** to narrow enforcement to privileged accounts.
