@@ -151,6 +151,57 @@ Before enabling enforcement on a production site:
 
 ## Configuration
 
+There is **no options page** — every setting is a `wp-config.php` constant or a filter.
+Which one to use depends on the setting, because constants and filters become available
+at different points in WordPress's boot sequence.
+
+### Where configuration goes
+
+| Setting | Set it with | Put it in |
+|---|---|---|
+| `FORCE_2FA_DISABLE` (kill switch) | `define()` | **`wp-config.php`** |
+| Enforcement scope (`FORCE_2FA_ENFORCED_CAPABILITY`) | `define()` — or the `force_2fa_enforced_capability` filter | **`wp-config.php`** (recommended) |
+| Blocking mode (`FORCE_2FA_BLOCKING_MODE`) | `define()` — or the `force_2fa_blocking_mode_enabled` filter | **`wp-config.php`** (recommended) |
+| Self-update (`FORCE_2FA_DISABLE_SELF_UPDATE`) | `define()` — or the `force_2fa_self_update_enabled` filter | **`wp-config.php`** (recommended) |
+| Excluded roles | the `force_2fa_excluded_roles` filter | **a plugin / mu-plugin / theme** — *not* `wp-config.php` |
+| API-login allowlist | the `force_2fa_api_login_allowlist` filter | **a plugin / mu-plugin / theme** — *not* `wp-config.php` |
+| Per-user exemption | the `force_2fa_user_is_exempt` filter | **a plugin / mu-plugin / theme** — *not* `wp-config.php` |
+
+**The rule:**
+
+- **`define()` constants belong in `wp-config.php`.** The kill switch, enforcement scope,
+  blocking mode, and self-update toggle are all read with `defined()`, so `wp-config.php` is
+  their natural home — it loads first and can never clash with the plugin. **Yes, using
+  `wp-config.php` is the advised way to set the plugin's scope** (`FORCE_2FA_ENFORCED_CAPABILITY`).
+- **Filters must NOT go in `wp-config.php`.** `add_filter()` does not exist yet when
+  `wp-config.php` runs (WordPress loads it *before* `wp-includes/plugin.php`), so a filter there
+  fails with *"call to undefined function add_filter()"*. Put filters where `add_filter()` is
+  available: a small plugin, a **companion mu-plugin**, or your theme's `functions.php`.
+- **Excluded roles and the API allowlist are array constants** declared inside the plugin, so
+  they cannot be set from `wp-config.php` at all — use their filter (recommended) or edit the
+  constant in the plugin file.
+
+> [!TIP]
+> **Using the [mu-loader](#optional-cannot-be-deactivated-mode-mu-loader)?** Keep your filter-based
+> config in a **companion mu-plugin** — a second flat file in `wp-content/mu-plugins/` — so the
+> configuration is force-loaded and un-deactivatable alongside the plugin itself (the same reason
+> you reached for the mu-loader):
+>
+> ```php
+> <?php
+> // wp-content/mu-plugins/force-2fa-config.php
+> add_filter( 'force_2fa_excluded_roles', function () {
+>     return array( 'subscriber', 'customer' );
+> } );
+> add_filter( 'force_2fa_api_login_allowlist', function () {
+>     return array( 'svc-deploy', 'svc-monitoring' );
+> } );
+> ```
+>
+> Load order is not a concern: the plugin reads these filters **lazily at enforcement time**
+> (during login, when Two Factor evaluates a user's providers) — long after every mu-plugin,
+> plugin, and theme has registered its filters. So the early mu-loader load never races the config.
+
 ### Optional: blocking mode (require setup before access)
 
 By default this plugin uses a **soft floor**: it appends the Email provider so the
@@ -277,8 +328,10 @@ in the `FORCE_2FA_EXCLUDED_ROLES` constant:
 const FORCE_2FA_EXCLUDED_ROLES = array( 'subscriber', 'customer' );
 ```
 
-Or, without editing this plugin file, override the effective list from a small
-site-specific plugin or mu-plugin:
+Or, without editing this plugin file, override the effective list with the
+`force_2fa_excluded_roles` filter from a small site-specific plugin, a companion
+mu-plugin, or your theme — **not `wp-config.php`** (see
+[Where configuration goes](#where-configuration-goes)):
 
 ```php
 add_filter( 'force_2fa_excluded_roles', function () {
