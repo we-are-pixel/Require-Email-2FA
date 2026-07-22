@@ -4,7 +4,7 @@ Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.12.0
+Stable tag: 1.13.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -134,9 +134,15 @@ plugin's rate limiting and failed-attempt protections.
 
 = Who is required to use 2FA, and how do I change it? =
 
-By default, every user is. To narrow enforcement to privileged accounts, define
-`FORCE_2FA_ENFORCED_CAPABILITY` in wp-config.php with the capability a user must hold
-to be in scope — for administrators only:
+By default, every user is. Right after you activate the plugin, a one-time admin notice
+lets you pick the scope with a radio — All users / Editors and up / Administrators only
+(administrators pre-selected) — and one click saves it; until you choose, the secure
+default (all users) applies. To change the choice later, deactivate and reactivate the
+plugin.
+
+For a code-managed setup, define `FORCE_2FA_ENFORCED_CAPABILITY` in wp-config.php with
+the capability a user must hold to be in scope (this overrides the first-run choice and
+hides the prompt) — for administrators only:
 
 `
 define( 'FORCE_2FA_ENFORCED_CAPABILITY', 'manage_options' );
@@ -315,6 +321,25 @@ account independently of the 2FA scope, so narrowing the scope (or excluding a r
 never opens XML-RPC to accounts left out of the interactive challenge.
 
 == Changelog ==
+
+= 1.13.0 =
+* New: a first-run **enforcement-scope prompt**. On activation an admin notice offers a
+  one-time choice — All users / Editors and up / Administrators only (administrators
+  pre-selected) — folded into the existing setup notices, not a standing settings page.
+  Until a choice is made the secure default (all users) applies; the choice is stored,
+  cleared on deactivation (so reactivating re-prompts — the "start over" path), and
+  purged on uninstall. A `FORCE_2FA_ENFORCED_CAPABILITY` constant overrides the choice
+  and suppresses the prompt (infra-as-code wins).
+* Changed: the **XML-RPC API-login allowlist is now enforced independently of the 2FA
+  scope**. Previously, narrowing enforcement (or excluding a role) dropped out-of-scope
+  accounts from the allowlist too; now every XML-RPC login is held to the allowlist +
+  Application-Password policy for all users, whatever the scope. (Governs XML-RPC, not
+  REST.)
+* Fixed: `FORCE_2FA_EXCLUDED_ROLES` and `FORCE_2FA_API_LOGIN_ALLOWLIST` are now read via
+  `defined()`, so setting them in wp-config.php no longer fatals with "cannot redeclare
+  constant". Every FORCE_2FA_* constant is now safe to define in wp-config.php.
+* Docs: a "Where configuration goes" section — constants in wp-config.php, filters in a
+  plugin/companion mu-plugin/theme — plus a companion-mu-plugin example.
 
 = 1.12.0 =
 * New **optional capability-scoping** to narrow enforcement to privileged accounts.

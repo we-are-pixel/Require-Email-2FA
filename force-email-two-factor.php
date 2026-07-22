@@ -6,7 +6,7 @@
  * Description:      Requires the Two Factor plugin and makes emailed 2FA a required login factor for all users (optionally scoped to a capability, e.g. administrators).
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
- * Version:          1.12.0
+ * Version:          1.13.0
  * Requires at least: 6.8
  * Requires PHP:     7.2
  * License:          GPL-2.0-or-later
@@ -112,7 +112,7 @@ if ( defined( 'FORCE_2FA_DISABLE' ) && FORCE_2FA_DISABLE ) {
 if ( defined( 'FORCE_2FA_LOADED' ) ) {
 	return;
 }
-define( 'FORCE_2FA_LOADED', '1.12.0' );
+define( 'FORCE_2FA_LOADED', '1.13.0' );
 // @codeCoverageIgnoreEnd
 
 /**
@@ -430,10 +430,142 @@ function force_2fa_excluded_roles() {
  * @return string Capability name, or '' to enforce on all users (the default).
  */
 function force_2fa_enforced_capability() {
-	$capability = defined( 'FORCE_2FA_ENFORCED_CAPABILITY' ) ? FORCE_2FA_ENFORCED_CAPABILITY : '';
+	if ( defined( 'FORCE_2FA_ENFORCED_CAPABILITY' ) ) {
+		// Infra-as-code wins: a wp-config constant overrides the activation-time choice.
+		$capability = FORCE_2FA_ENFORCED_CAPABILITY;
+	} else {
+		// The activation prompt stores the operator's choice; unset → the all-users
+		// default. See force_2fa_scope_choice_get() / the scope notice + handler.
+		$stored     = force_2fa_scope_choice_get();
+		$capability = ( null === $stored ) ? '' : $stored;
+	}
+
 	$capability = apply_filters( 'force_2fa_enforced_capability', $capability );
 
 	return is_string( $capability ) ? trim( $capability ) : '';
+}
+
+/**
+ * Option name storing the activation-time enforcement-scope choice.
+ *
+ * Single value; the plugin's only persistent state besides the updater's option.
+ * Written by the scope prompt handler, read as a fallback by
+ * force_2fa_enforced_capability(), cleared on deactivation, and purged by uninstall.php.
+ */
+const FORCE_2FA_SCOPE_OPTION = 'force_2fa_enforced_capability';
+
+/**
+ * The enforcement-scope choices offered by the activation prompt.
+ *
+ * Maps a stored/submitted capability to its label. The keys ARE the capability the
+ * scope resolves to: '' = every user, 'edit_posts' = contributors and up, and
+ * 'manage_options' = administrators (and multisite super admins). This is the closed
+ * set the handler validates against — an option or POST value outside it is ignored.
+ *
+ * @return array<string,string> capability => label.
+ */
+function force_2fa_scope_choices() {
+	return array(
+		''               => __( 'All users (recommended for the strongest coverage)', 'force-email-two-factor' ),
+		'edit_posts'     => __( 'Editors and up', 'force-email-two-factor' ),
+		'manage_options' => __( 'Administrators only', 'force-email-two-factor' ),
+	);
+}
+
+/**
+ * The capability pre-selected in the activation prompt.
+ *
+ * Administrators-only is offered as the recommended starting point (smallest rollout
+ * blast radius). Until the operator submits the form, the SECURE default — all users —
+ * still applies (force_2fa_enforced_capability() returns '' while the choice is unset).
+ *
+ * @return string
+ */
+function force_2fa_scope_default_choice() {
+	return 'manage_options';
+}
+
+/**
+ * Coerce a raw scope value to a valid capability choice, or null if invalid.
+ *
+ * Used for both the stored option and the submitted form value, so a corrupted option
+ * or a tampered POST can never inject an arbitrary capability — only the closed set in
+ * force_2fa_scope_choices() is accepted.
+ *
+ * @param mixed $raw Candidate value.
+ * @return string|null A valid capability ('' allowed), or null when not a valid choice.
+ */
+function force_2fa_sanitize_scope_choice( $raw ) {
+	if ( ! is_string( $raw ) ) {
+		return null;
+	}
+
+	return array_key_exists( $raw, force_2fa_scope_choices() ) ? $raw : null;
+}
+
+/**
+ * The stored scope choice, or null when the operator has not chosen yet.
+ *
+ * Network option on multisite (the choice is network-wide), site option otherwise.
+ * A stored value outside the valid set is treated as "not chosen" (null).
+ *
+ * @return string|null Valid capability, or null when unset/invalid.
+ */
+function force_2fa_scope_choice_get() {
+	$value = is_multisite()
+		? get_site_option( FORCE_2FA_SCOPE_OPTION, null )
+		: get_option( FORCE_2FA_SCOPE_OPTION, null );
+
+	if ( null === $value ) {
+		return null; // Never chosen.
+	}
+
+	return force_2fa_sanitize_scope_choice( $value );
+}
+
+/**
+ * Persist the operator's scope choice ($capability must be pre-validated).
+ *
+ * @param string $capability One of the force_2fa_scope_choices() keys.
+ * @return void
+ */
+function force_2fa_scope_choice_set( $capability ) {
+	if ( is_multisite() ) {
+		update_site_option( FORCE_2FA_SCOPE_OPTION, $capability );
+	} else {
+		update_option( FORCE_2FA_SCOPE_OPTION, $capability );
+	}
+}
+
+/**
+ * Clear the stored scope choice (single + network), so the prompt shows again.
+ *
+ * Registered on deactivation: the choice is an activation-time decision, so
+ * deactivating and reactivating re-prompts — the intended "start over" path. Clears
+ * both storage locations defensively.
+ *
+ * @return void
+ */
+function force_2fa_clear_scope_choice() {
+	delete_option( FORCE_2FA_SCOPE_OPTION );
+	delete_site_option( FORCE_2FA_SCOPE_OPTION );
+}
+
+/**
+ * Pure decision: whether to show the activation-time scope prompt.
+ *
+ * Shown only when the scope has NOT been pinned in code (a wp-config constant means the
+ * operator manages it there — no prompt), the choice has not yet been stored, and the
+ * current user can act on it. Independent of Two Factor's state, so the choice is
+ * captured even when Two Factor is already active (no dependency notice to piggyback).
+ *
+ * @param bool $constant_defined Whether FORCE_2FA_ENFORCED_CAPABILITY is defined.
+ * @param bool $choice_stored    Whether a scope choice has been saved.
+ * @param bool $user_can_manage  Whether the current user may set the scope.
+ * @return bool
+ */
+function force_2fa_should_prompt_scope( $constant_defined, $choice_stored, $user_can_manage ) {
+	return ! $constant_defined && ! $choice_stored && (bool) $user_can_manage;
 }
 
 /**
@@ -1566,6 +1698,96 @@ function force_2fa_handle_install_two_factor() {
 // @codeCoverageIgnoreEnd
 
 /**
+ * Capability required to set the enforcement scope from the activation prompt.
+ *
+ * @return string
+ */
+function force_2fa_scope_manage_capability() {
+	return is_multisite() ? 'manage_network_options' : 'manage_options';
+}
+
+// @codeCoverageIgnoreStart
+// WP-glue: the first-run scope prompt (notice HTML) and its admin-post handler
+// (nonce/capability/redirect). The decisions they rely on — force_2fa_should_prompt_scope(),
+// force_2fa_sanitize_scope_choice(), the option get/set/clear — are unit-tested; this
+// rendering + request handling is exercised by the real-WordPress E2E.
+
+/**
+ * First-run notice: let an operator scope enforcement at activation time.
+ *
+ * Shown on the admin (and network admin) until a choice is stored or
+ * FORCE_2FA_ENFORCED_CAPABILITY is defined in code. Until a choice is made the SECURE
+ * default (all users) applies — and the default floor only adds the email challenge, it
+ * does not block anyone — so there is no lockout window. Submitting posts to
+ * force_2fa_handle_set_scope() via admin-post.php.
+ *
+ * @return void
+ */
+function force_2fa_scope_notice() {
+	if ( ! force_2fa_should_prompt_scope(
+		defined( 'FORCE_2FA_ENFORCED_CAPABILITY' ),
+		null !== force_2fa_scope_choice_get(),
+		current_user_can( force_2fa_scope_manage_capability() )
+	) ) {
+		return;
+	}
+
+	$action   = 'force_2fa_set_scope';
+	$post_url = is_multisite() ? network_admin_url( 'admin-post.php' ) : admin_url( 'admin-post.php' );
+	$default  = force_2fa_scope_default_choice();
+
+	echo '<div class="notice notice-warning force-2fa-scope-notice"><p><strong>';
+	echo esc_html__( 'Require Email 2FA: choose who must use two-factor.', 'force-email-two-factor' );
+	echo '</strong> ';
+	echo esc_html__( 'Until you choose, two-factor is required for all users. Narrow it below if you would rather start with a smaller group — you can change this later by deactivating and reactivating the plugin.', 'force-email-two-factor' );
+	echo '</p>';
+
+	echo '<form method="post" action="' . esc_url( $post_url ) . '">';
+	echo '<input type="hidden" name="action" value="' . esc_attr( $action ) . '" />';
+	wp_nonce_field( $action );
+
+	echo '<p>';
+	foreach ( force_2fa_scope_choices() as $capability => $label ) {
+		printf(
+			'<label style="margin-right:1.5em;"><input type="radio" name="force_2fa_scope" value="%1$s" %2$s /> %3$s</label>',
+			esc_attr( $capability ),
+			checked( $capability, $default, false ),
+			esc_html( $label )
+		);
+	}
+	echo '</p>';
+
+	echo '<p><button type="submit" class="button button-primary">';
+	echo esc_html__( 'Save enforcement scope', 'force-email-two-factor' );
+	echo '</button></p></form></div>';
+}
+
+/**
+ * Handle the scope-prompt submission: validate nonce + capability, store, redirect.
+ *
+ * @return void
+ */
+function force_2fa_handle_set_scope() {
+	if ( ! current_user_can( force_2fa_scope_manage_capability() ) ) {
+		wp_die( esc_html__( 'You do not have permission to set the two-factor enforcement scope.', 'force-email-two-factor' ) );
+	}
+
+	check_admin_referer( 'force_2fa_set_scope' );
+
+	$raw    = isset( $_POST['force_2fa_scope'] ) ? sanitize_text_field( wp_unslash( $_POST['force_2fa_scope'] ) ) : '';
+	$choice = force_2fa_sanitize_scope_choice( $raw );
+	if ( null === $choice ) {
+		$choice = ''; // Unrecognised submission → the secure default (all users).
+	}
+
+	force_2fa_scope_choice_set( $choice );
+
+	wp_safe_redirect( is_multisite() ? network_admin_url() : admin_url() );
+	exit;
+}
+// @codeCoverageIgnoreEnd
+
+/**
  * Keep the dependency notice honest when Two Factor is deleted via the AJAX "Delete".
  *
  * WordPress deletes plugins over AJAX without reloading the page, so the
@@ -1958,6 +2180,13 @@ function force_2fa_register_hooks() {
 	add_action( 'network_admin_notices', 'force_2fa_network_dependency_notice' );
 	add_action( 'admin_post_force_2fa_install_two_factor', 'force_2fa_handle_install_two_factor' );
 
+	// First-run enforcement-scope prompt: a one-time choice (all users / editors+ /
+	// admins-only) folded into the admin notices, not a standing settings page. Shows
+	// until a choice is stored or FORCE_2FA_ENFORCED_CAPABILITY is defined in code.
+	add_action( 'admin_notices', 'force_2fa_scope_notice' );
+	add_action( 'network_admin_notices', 'force_2fa_scope_notice' );
+	add_action( 'admin_post_force_2fa_set_scope', 'force_2fa_handle_set_scope' );
+
 	// Keep the dependency notice honest after an AJAX plugin delete (see the
 	// function docblock): reload the Plugins screen when Two Factor is deleted.
 	add_action( 'admin_enqueue_scripts', 'force_2fa_enqueue_notice_refresh' );
@@ -1969,6 +2198,11 @@ function force_2fa_register_hooks() {
 
 // Network-only on multisite: refuse per-site activation (see the function docblock).
 register_activation_hook( __FILE__, 'force_2fa_block_single_site_activation' );
+
+// Clear the stored scope choice on deactivation, so reactivating re-prompts (the
+// intended "start over" path). The choice is an activation-time decision, not a
+// standing setting; uninstall.php purges it too.
+register_deactivation_hook( __FILE__, 'force_2fa_clear_scope_choice' );
 
 // Self-hosted updates from GitHub Releases (see force_2fa_bootstrap_self_update()).
 add_action( 'plugins_loaded', 'force_2fa_bootstrap_self_update' );
