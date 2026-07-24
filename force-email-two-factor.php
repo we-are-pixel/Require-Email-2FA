@@ -775,9 +775,13 @@ function force_2fa_user_roles_on_site( $user_id, $site_id ) {
 /**
  * Whether Wordfence Login Security reports active 2FA for a user.
  *
- * Wordfence exposes this through its public user controller. Detected defensively so
- * Wordfence being absent, inactive, or changed never causes a fatal — on any
- * integration error, return false so this plugin keeps supplying its email floor.
+ * Called from force_2fa_compute_exemption() so a user whose 2FA is handled by Wordfence
+ * is exempt from this plugin's emailed floor — nobody is driven through two 2FA plugins
+ * at once (even though Wordfence offers no email method, the failure/confusion modes of
+ * two 2FA systems are not predictable). Wordfence is the only bundled integration; to
+ * exempt users protected by some OTHER external system, use the 'force_2fa_user_is_exempt'
+ * filter. Detected defensively so Wordfence being absent, inactive, or changed never
+ * causes a fatal — on any integration error, return false so the email floor stays.
  *
  * @param WP_User $user The resolved user.
  * @return bool True when Wordfence reports active 2FA for the user.
@@ -800,23 +804,6 @@ function force_2fa_wordfence_2fa_active( WP_User $user ) {
 		// A third-party integration failure must not disable this plugin's floor.
 		return false;
 	}
-}
-
-/**
- * Whether the user's 2FA is handled by an EXTERNAL system (not the Two Factor plugin).
- *
- * When true, this plugin exempts the user from its emailed floor, so they are never
- * driven through two different 2FA plugins at once (which is confusing and error-prone,
- * even when — as with Wordfence — the other plugin offers no email method). A defensive
- * Wordfence Login Security check is bundled; integrators add others through the
- * 'force_2fa_user_has_external_2fa' filter (or the broader 'force_2fa_user_is_exempt'
- * filter). Fail-safe: any detection error leaves the email floor in place.
- *
- * @param WP_User $user The resolved user.
- * @return bool
- */
-function force_2fa_user_has_external_2fa( WP_User $user ) {
-	return (bool) apply_filters( 'force_2fa_user_has_external_2fa', force_2fa_wordfence_2fa_active( $user ), $user );
 }
 
 /**
@@ -865,10 +852,11 @@ function force_2fa_compute_exemption( WP_User $user ) {
 		$has_capability
 	);
 
-	// Also exempt when the user's 2FA is handled by an external system (e.g. Wordfence
-	// Login Security): don't ALSO supply the Two Factor email floor, so a user is never
-	// driven through two different 2FA plugins at once. Memoized with the rest.
-	if ( ! $exempt && force_2fa_user_has_external_2fa( $user ) ) {
+	// Also exempt when the user's 2FA is handled by Wordfence Login Security: don't ALSO
+	// supply the Two Factor email floor, so a user is never driven through two different
+	// 2FA plugins at once. Memoized with the rest. (Other external systems: exempt those
+	// users via the 'force_2fa_user_is_exempt' filter.)
+	if ( ! $exempt && force_2fa_wordfence_2fa_active( $user ) ) {
 		$exempt = true;
 	}
 

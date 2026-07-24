@@ -218,13 +218,13 @@ add_filter( 'force_2fa_excluded_roles', function () {
 
 = What if users already use another 2FA plugin, like Wordfence? =
 
-Those users are skipped — the emailed floor is not added for anyone whose 2FA is handled
-by an external system, so no one is pushed through two 2FA plugins at once (even when the
-other plugin, like Wordfence, offers no email method). A defensive Wordfence Login
-Security check is built in; add other integrations with the `force_2fa_user_has_external_2fa`
-filter (or exempt specific users via `force_2fa_user_is_exempt`). Detection fails safe: if
-it errors, the email floor stays in place. Users on the Two Factor plugin are unaffected —
-email is still their floor, and their TOTP/WebAuthn stays primary.
+Users whose 2FA is handled by Wordfence Login Security are skipped — the emailed floor is
+not added for them, so no one is pushed through two 2FA plugins at once (even though
+Wordfence offers no email method). The Wordfence check is built in and fails safe: if it
+errors, the email floor stays in place. To skip users protected by another external 2FA
+system, use the `force_2fa_user_is_exempt` filter to return true for them. Users on the
+Two Factor plugin are unaffected — email is still their floor, and their TOTP/WebAuthn
+stays primary.
 
 = How do I let an integration log in over XML-RPC? =
 
@@ -333,13 +333,12 @@ never opens XML-RPC to accounts left out of the interactive challenge.
 == Changelog ==
 
 = 1.13.1 =
-* New: users whose 2FA is handled by an EXTERNAL system are exempt from the emailed
-  floor, so no one is driven through two 2FA plugins at once. Bundles a defensive
-  Wordfence Login Security check; add others via the `force_2fa_user_has_external_2fa`
-  filter (or the existing `force_2fa_user_is_exempt` filter). Fail-safe — any detection
-  error leaves the email floor in place. Email remains a floor for everyone else,
-  including users who already have a native Two Factor method (TOTP/WebAuthn get their
-  method AND email).
+* New: users whose 2FA is handled by Wordfence Login Security are exempt from the
+  emailed floor, so no one is driven through two 2FA plugins at once. The Wordfence
+  check is built in and fail-safe (any detection error leaves the floor in place); to
+  skip users on another external 2FA system, use the existing `force_2fa_user_is_exempt`
+  filter. Email remains a floor for everyone else, including users who already have a
+  native Two Factor method (TOTP/WebAuthn get their method AND email).
 * Improved: the emailed method becomes the *primary* provider only when the user has no
   other real method (no method, or backup-codes-only). A real method (TOTP, WebAuthn,
   …) always keeps primary — the appended email floor no longer demotes it — via Two

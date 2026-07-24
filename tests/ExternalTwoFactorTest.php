@@ -5,24 +5,23 @@ namespace Force2FA\Tests;
 use Force2FA\TestCase;
 
 /**
- * External-2FA exemption: force_2fa_wordfence_2fa_active(),
- * force_2fa_user_has_external_2fa(), and the resulting skip of the email floor — while
- * the floor is STILL supplied for everyone else (the key difference from the scrapped
- * approach: email stays a floor for TOTP/WebAuthn/no-method users).
+ * External-2FA exemption: force_2fa_wordfence_2fa_active() and the resulting skip of the
+ * email floor — while the floor is STILL supplied for everyone else (the key difference
+ * from the scrapped approach: email stays a floor for TOTP/WebAuthn/no-method users).
+ * Wordfence is the only bundled integration; other external systems use the existing
+ * 'force_2fa_user_is_exempt' filter, covered by ExemptTest.
  */
 final class ExternalTwoFactorTest extends TestCase {
 
-	public function test_wordfence_active_reports_external_2fa(): void {
+	public function test_wordfence_active_is_detected(): void {
 		$user = $this->user( 1, 'wf', array( 'subscriber' ) );
 		$this->wordfence2fa( 1 );
 		$this->assertTrue( force_2fa_wordfence_2fa_active( $user ) );
-		$this->assertTrue( force_2fa_user_has_external_2fa( $user ) );
 	}
 
-	public function test_wordfence_inactive_reports_no_external_2fa(): void {
+	public function test_wordfence_inactive_is_not_detected(): void {
 		$user = $this->user( 2, 'plain', array( 'subscriber' ) );
 		$this->assertFalse( force_2fa_wordfence_2fa_active( $user ) );
-		$this->assertFalse( force_2fa_user_has_external_2fa( $user ) );
 	}
 
 	public function test_wordfence_failure_is_fail_safe(): void {
@@ -32,13 +31,14 @@ final class ExternalTwoFactorTest extends TestCase {
 		$this->wordfence2fa( 3 );
 		$this->wordfenceThrows();
 		$this->assertFalse( force_2fa_wordfence_2fa_active( $user ) );
-		$this->assertFalse( force_2fa_user_has_external_2fa( $user ) );
+		$this->assertFalse( force_2fa_user_is_exempt( $user ), 'fail-safe: not exempt, floor stays' );
 	}
 
-	public function test_external_filter_can_report_external_2fa(): void {
+	public function test_other_external_2fa_via_exempt_filter(): void {
+		// "Something else" is supported through the existing per-user exemption filter.
 		$user = $this->user( 4, 'custom', array( 'subscriber' ) );
-		$this->setFilter( 'force_2fa_user_has_external_2fa', true );
-		$this->assertTrue( force_2fa_user_has_external_2fa( $user ) );
+		$this->setFilter( 'force_2fa_user_is_exempt', true );
+		$this->assertTrue( force_2fa_user_is_exempt( $user ) );
 	}
 
 	public function test_external_2fa_user_is_exempt(): void {
