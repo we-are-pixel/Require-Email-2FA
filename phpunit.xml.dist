@@ -12,6 +12,8 @@
     <testsuites>
         <testsuite name="unit">
             <file>tests/ExemptTest.php</file>
+            <file>tests/ExternalTwoFactorTest.php</file>
+            <file>tests/PrimaryProviderTest.php</file>
             <file>tests/MemoizationTest.php</file>
             <file>tests/AllowlistTest.php</file>
             <file>tests/EnabledProvidersFilterTest.php</file>

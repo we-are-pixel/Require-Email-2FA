@@ -43,7 +43,15 @@ Require Email 2FA's dependency on Two Factor is *soft*: the Require Email 2FA pl
 
    It *appends* Email rather than replacing the provider list, so users who set
    up a stronger factor (TOTP, hardware key / WebAuthn) keep it as their primary
-   method, and **backup codes remain available** as a recovery path.
+   method, and **backup codes remain available** as a recovery path. Email becomes the
+   **primary** method only when the user has no other real method (no method, or
+   backup-codes-only); a configured TOTP/WebAuthn always stays primary.
+
+   > **Using Wordfence's 2FA?** Users whose 2FA is handled by **Wordfence Login Security**
+   > are **skipped** — the email floor is not added for them, so no one is pushed through
+   > two 2FA plugins at once. The Wordfence check is built in and fails safe (if it errors,
+   > the email floor stays). To skip users protected by *another* external 2FA system, use
+   > the `force_2fa_user_is_exempt` filter to return `true` for them.
 
 2. **Restricts XML-RPC logins.** Non-interactive logins bypass the interactive
    2FA screen. This plugin allows such a login to skip 2FA **only** when *both*:
