@@ -88,6 +88,22 @@ final class BlockingModeTest extends TestCase {
 		$this->assertFalse( force_2fa_should_require_setup( true, true, true, true, false ) );
 	}
 
+	public function test_active_wordfence_user_is_exempt_from_blocking_mode(): void {
+		$user = $this->user( 6, 'wordfenceuser', array( 'editor' ) );
+		$this->wordfence2fa( 6 );
+
+		$this->assertTrue( force_2fa_user_is_exempt( $user ) );
+		$this->assertFalse(
+			force_2fa_should_require_setup(
+				true,
+				true,
+				true,
+				force_2fa_user_is_exempt( $user ),
+				false
+			)
+		);
+	}
+
 	public function test_no_setup_when_already_configured(): void {
 		$this->assertFalse( force_2fa_should_require_setup( true, true, true, false, true ) );
 	}

@@ -8,7 +8,7 @@ use Two_Factor_Core;
 /**
  * Integration of the plugin's enforcement filter with the Two Factor contract.
  *
- * These assert the plugin's whole reason for existing: that appending the Email
+ * These assert the plugin's whole reason for existing: that supplying the Email
  * provider actually makes Two_Factor_Core treat a user as "using 2FA" (so the
  * login challenge fires), and that an excluded user does not — without
  * reimplementing the plugin logic, by routing through its real filter callback.
@@ -36,12 +36,12 @@ final class IntegrationTest extends TestCase {
 		);
 	}
 
-	public function test_existing_stronger_factor_is_preserved_with_email_floor(): void {
+	public function test_existing_stronger_factor_suppresses_email_fallback(): void {
 		$this->user( 5, 'totper', array( 'editor' ) );
 
-		// A user who configured TOTP keeps it; Email is only appended as a floor.
+		// A user who configured TOTP keeps it and does not receive forced Email.
 		$providers = Two_Factor_Core::get_enabled_providers_for_user( 5, array( 'Two_Factor_Totp' ) );
 
-		$this->assertSame( array( 'Two_Factor_Totp', 'Two_Factor_Email' ), $providers );
+		$this->assertSame( array( 'Two_Factor_Totp' ), $providers );
 	}
 }

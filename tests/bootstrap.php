@@ -366,12 +366,57 @@ if ( ! class_exists( 'WP_User' ) ) {
 	}
 }
 
-// Present by default so the enforcement filter takes its append path. The
+// Wordfence Login Security's public per-user 2FA contract. The namespaced alias
+// lets tests toggle active users without requiring Wordfence itself.
+if ( ! class_exists( 'WordfenceLS\\Controller_Users' ) ) {
+	class Force2FA_Wordfence_Users_Stub {
+		public static function shared() {
+			static $instance;
+			if ( ! $instance ) {
+				$instance = new self();
+			}
+			return $instance;
+		}
+
+		public function has_2fa_active( $user ) {
+			if ( ! empty( $GLOBALS['__force2fa_wordfence_throw'] ) ) {
+				throw new RuntimeException( 'Simulated Wordfence integration failure.' );
+			}
+
+			return in_array(
+				(int) $user->ID,
+				$GLOBALS['__force2fa_wordfence_2fa_users'] ?? array(),
+				true
+			);
+		}
+	}
+	class_alias( 'Force2FA_Wordfence_Users_Stub', 'WordfenceLS\\Controller_Users' );
+}
+
+// Present by default so the enforcement filter takes its fallback path. The
 // class-absent guard in force_2fa_dependency_met() is exercised by the separate
 // bootstrap-no-two-factor.php run, which defines FORCE2FA_TEST_NO_TWO_FACTOR to
 // suppress both Two Factor stubs and simulate the plugin being inactive/removed.
 if ( ! defined( 'FORCE2FA_TEST_NO_TWO_FACTOR' ) && ! class_exists( 'Two_Factor_Email' ) ) {
-	class Two_Factor_Email {}
+	class Two_Factor_Email {
+		public function is_available_for_user( $user ) {
+			return true;
+		}
+	}
+}
+
+if ( ! class_exists( 'Force2FA_Provider_Stub' ) ) {
+	class Force2FA_Provider_Stub {
+		private $available;
+
+		public function __construct( $available = true ) {
+			$this->available = (bool) $available;
+		}
+
+		public function is_available_for_user( $user ) {
+			return $this->available;
+		}
+	}
 }
 
 // Minimal stand-in for the Two Factor plugin's core, mirroring the real contract
@@ -388,7 +433,15 @@ if ( ! defined( 'FORCE2FA_TEST_NO_TWO_FACTOR' ) && ! class_exists( 'Two_Factor_C
 		 * another plugin unregistering Email.
 		 */
 		public static function get_providers() {
-			return $GLOBALS['__force2fa_providers'] ?? array( 'Two_Factor_Email' => new Two_Factor_Email() );
+			return $GLOBALS['__force2fa_providers'] ?? array(
+				'Two_Factor_Email'        => new Two_Factor_Email(),
+				'Two_Factor_Totp'         => new Force2FA_Provider_Stub(),
+				'Two_Factor_Backup_Codes' => new Force2FA_Provider_Stub(),
+			);
+		}
+
+		public static function get_supported_providers_for_user( $user = null ) {
+			return self::get_providers();
 		}
 
 		public static function get_enabled_providers_for_user( $user_id, array $stored = array() ) {

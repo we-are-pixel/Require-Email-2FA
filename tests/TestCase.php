@@ -31,9 +31,10 @@ abstract class TestCase extends BaseTestCase {
 		$GLOBALS['__force2fa_site_caps']            = array();
 		$GLOBALS['__force2fa_site_roles']           = array();
 		$GLOBALS['__force2fa_user_blogs']           = array();
+		$GLOBALS['__force2fa_wordfence_2fa_users']  = array();
 		$GLOBALS['__force2fa_get_blogs_calls']      = 0;
 		$GLOBALS['force_2fa_exempt_cache']          = array();
-		unset( $GLOBALS['force_2fa_app_password_user_id'], $GLOBALS['__force2fa_providers'], $GLOBALS['__force2fa_is_network_admin'], $GLOBALS['__force2fa_user_caps'], $GLOBALS['__force2fa_is_multisite'], $GLOBALS['__force2fa_sites'], $GLOBALS['__force2fa_nonce_ok'] );
+		unset( $GLOBALS['force_2fa_app_password_user_id'], $GLOBALS['__force2fa_providers'], $GLOBALS['__force2fa_is_network_admin'], $GLOBALS['__force2fa_user_caps'], $GLOBALS['__force2fa_is_multisite'], $GLOBALS['__force2fa_sites'], $GLOBALS['__force2fa_nonce_ok'], $GLOBALS['__force2fa_wordfence_throw'] );
 
 		// Start every test from "Two Factor not on disk" so the on-disk check is
 		// deterministic; installTwoFactorFile() opts a test into the installed state.
@@ -141,6 +142,11 @@ abstract class TestCase extends BaseTestCase {
 	/** Set the excluded-roles list seen by the plugin. */
 	protected function excludeRoles( array $roles ): void {
 		$this->setFilter( 'force_2fa_excluded_roles', $roles );
+	}
+
+	/** Mark a user as having active Wordfence Login Security 2FA. */
+	protected function wordfence2fa( int $user_id ): void {
+		$GLOBALS['__force2fa_wordfence_2fa_users'][] = $user_id;
 	}
 
 	/** Set the API-login allowlist seen by the plugin. */

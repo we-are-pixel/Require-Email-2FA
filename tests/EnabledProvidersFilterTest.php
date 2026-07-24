@@ -9,16 +9,43 @@ use Force2FA\TestCase;
  */
 final class EnabledProvidersFilterTest extends TestCase {
 
-	public function test_appends_email_for_a_normal_user(): void {
+	public function test_supplies_email_as_sole_provider_for_a_normal_user(): void {
 		$this->user( 3, 'editoruser', array( 'editor' ) );
 		$result = force_2fa_filter_enabled_providers( array(), 3 );
 		$this->assertSame( array( 'Two_Factor_Email' ), $result );
 	}
 
-	public function test_preserves_existing_stronger_factor(): void {
+	public function test_alternative_provider_suppresses_email_fallback(): void {
 		$this->user( 3, 'editoruser', array( 'editor' ) );
 		$result = force_2fa_filter_enabled_providers( array( 'Two_Factor_Totp' ), 3 );
-		$this->assertSame( array( 'Two_Factor_Totp', 'Two_Factor_Email' ), $result );
+		$this->assertSame( array( 'Two_Factor_Totp' ), $result );
+	}
+
+	public function test_existing_email_choice_is_not_removed_alongside_alternative(): void {
+		$this->user( 3, 'editoruser', array( 'editor' ) );
+		$result = force_2fa_filter_enabled_providers(
+			array( 'Two_Factor_Email', 'Two_Factor_Totp' ),
+			3
+		);
+		$this->assertSame( array( 'Two_Factor_Email', 'Two_Factor_Totp' ), $result );
+	}
+
+	public function test_enabled_but_unavailable_provider_gets_email_as_sole_fallback(): void {
+		$this->user( 3, 'editoruser', array( 'editor' ) );
+		$GLOBALS['__force2fa_providers'] = array(
+			'Two_Factor_Email'        => new \Two_Factor_Email(),
+			'Two_Factor_Backup_Codes' => new \Force2FA_Provider_Stub( false ),
+		);
+
+		$result = force_2fa_filter_enabled_providers(
+			array( 'Two_Factor_Backup_Codes' ),
+			3
+		);
+
+		$this->assertSame(
+			array( 'Two_Factor_Email' ),
+			$result
+		);
 	}
 
 	public function test_does_not_duplicate_email_when_already_present(): void {
@@ -55,6 +82,24 @@ final class EnabledProvidersFilterTest extends TestCase {
 		$this->user( 3, 'editoruser', array( 'editor' ) );
 		$result = force_2fa_filter_enabled_providers( array( 'Two_Factor_Totp' ), 3 );
 		$this->assertSame( array( 'Two_Factor_Totp' ), $result );
+	}
+
+	public function test_active_wordfence_2fa_suppresses_email_fallback(): void {
+		$this->user( 3, 'editoruser', array( 'editor' ) );
+		$this->wordfence2fa( 3 );
+
+		$result = force_2fa_filter_enabled_providers( array(), 3 );
+
+		$this->assertSame( array(), $result );
+	}
+
+	public function test_wordfence_integration_failure_retains_email_fallback(): void {
+		$this->user( 3, 'editoruser', array( 'editor' ) );
+		$GLOBALS['__force2fa_wordfence_throw'] = true;
+
+		$result = force_2fa_filter_enabled_providers( array(), 3 );
+
+		$this->assertSame( array( 'Two_Factor_Email' ), $result );
 	}
 
 	public function test_register_hooks_wires_both_filters(): void {

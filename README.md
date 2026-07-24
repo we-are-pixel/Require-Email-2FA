@@ -35,15 +35,15 @@ Require Email 2FA's dependency on Two Factor is *soft*: the Require Email 2FA pl
 
 ## What it does
 
-1. **Forces 2FA for everyone (by default).** It ensures the (assumed) always-available,
-   zero-setup **Email** provider is enabled for every user, so the login
-   challenge appears for all accounts — including ones that never configured 2FA.
+1. **Forces 2FA for otherwise-unprotected users (by default).** It supplies the
+   zero-setup **Email** provider when a user has no other active 2FA method, so the
+   login challenge appears even for accounts that never configured 2FA.
    Enforcement can optionally be **narrowed to a capability** (e.g. administrators
    only) and scoped with **per-role exclusions**. (See Configuration.)
 
-   It *appends* Email rather than replacing the provider list, so users who set
-   up a stronger factor (TOTP, hardware key / WebAuthn) keep it as their primary
-   method, and **backup codes remain available** as a recovery path.
+   Users with a currently available TOTP, hardware key / WebAuthn, backup codes,
+   or active Wordfence Login Security 2FA are left untouched. The plugin never
+   removes existing provider choices.
 
 2. **Restricts XML-RPC logins.** Non-interactive logins bypass the interactive
    2FA screen. This plugin allows such a login to skip 2FA **only** when *both*:
@@ -209,10 +209,10 @@ Two rules worth remembering:
 
 ### Optional: blocking mode (require setup before access)
 
-By default this plugin uses a **soft floor**: it appends the Email provider so the
-login challenge fires for everyone, but a user who has never set up 2FA is not
-otherwise obstructed. **Blocking mode** additionally requires users to *configure*
-a factor before they can use the site.
+By default this plugin uses a **soft fallback**: it supplies the Email provider only
+for users without another active 2FA method, but an unconfigured user is not
+otherwise obstructed. **Blocking mode** additionally requires those users to
+*configure* a factor before they can use the site.
 
 > [!TIP]
 > **▶ [Try blocking mode live in WordPress Playground][blocking-playground]** — boots a
@@ -250,7 +250,7 @@ It is deliberately built to be **impossible to dead-end**:
 
 - "Configured" is read from Two Factor's own stored setting
   (`_two_factor_enabled_providers`), so configuration genuinely persists and clears
-  the gate. The runtime Email floor this plugin appends is *not* counted as
+  the gate. The runtime Email fallback this plugin supplies is *not* counted as
   configuration — otherwise nobody would ever be prompted.
 - The **profile / user-edit screens are never gated**, and neither are
   **AJAX, REST, cron, XML-RPC, or WP-CLI** — those are exactly the paths Two Factor's
@@ -271,10 +271,10 @@ checklist and the `bin/blocking-mode-e2e.sh` end-to-end check.
 
 ### Enforcement scope (who is required to use 2FA)
 
-**By default, forced 2FA applies to every user.** This is the security baseline: the
-emailed floor covers all accounts, so the login challenge protects everyone, not just
-administrators. (The [XML-RPC API-login hardening](#security-model) is enforced for all
-accounts *regardless* of this scope — narrowing it never opens XML-RPC.)
+**By default, every user is in scope.** Users who already have another active method
+are left to it; the emailed fallback covers the otherwise-unprotected accounts.
+(The [XML-RPC API-login hardening](#security-model) is enforced for all accounts
+*regardless* of this scope or external-2FA state — narrowing it never opens XML-RPC.)
 
 > **No `wp-config.php` access? Pick the scope right after activating.** A one-time
 > admin notice appears on first run with a radio — **All users / Editors and up /
@@ -469,21 +469,23 @@ Nothing this plugin creates touches an SSO/SAML/OIDC/OAuth/LDAP integration's co
 ## How it works (for maintainers)
 
 - **Forcing 2FA:** filters `two_factor_enabled_providers_for_user` to add
-  `Two_Factor_Email`. `Two_Factor_Email::is_available_for_user()` returns `true`
-  unconditionally and needs no per-user setup, so it becomes an available — and
-  for unconfigured users, the primary — provider. That makes
+  `Two_Factor_Email` only when the user has no non-Email provider and is not exempt.
+  `Two_Factor_Email::is_available_for_user()` returns `true` unconditionally and
+  needs no per-user setup, so it becomes the primary provider for an otherwise
+  unconfigured user. That makes
   `Two_Factor_Core::is_user_using_two_factor()` true, which triggers the login
   challenge. A `force_2fa_dependency_met()` guard — Two Factor loaded **and** the
   Email provider registered in `Two_Factor_Core::get_providers()` — means the
   filter no-ops safely (never stripping an existing factor) if Two Factor is
-  inactive, and does not append a provider Two Factor can't resolve.
+  inactive, and does not return a provider Two Factor can't resolve. Wordfence's
+  public per-user controller supplies the built-in external-2FA exemption.
 
 - **Blocking mode (optional):** off by default. When on, `force_2fa_enforce_setup_gate()`
   (hooked on both `admin_init` and `template_redirect`) redirects a logged-in,
   non-exempt user who has not configured 2FA to their profile page. It composes two
   pure, unit-tested decisions: `force_2fa_should_require_setup()` (who still needs
   setup — keyed off Two Factor's stored `_two_factor_enabled_providers` meta via
-  `force_2fa_user_has_configured_2fa()`, so the runtime Email floor never counts) and
+  `force_2fa_user_has_configured_2fa()`, so the runtime Email fallback never counts) and
   `force_2fa_request_is_gateable()` (which requests may be redirected — never AJAX,
   REST, cron, XML-RPC, WP-CLI, or the profile/user-edit setup screen). It no-ops unless
   Two Factor is usable, so it cannot lock a site where 2FA can't be configured.
@@ -579,18 +581,27 @@ Nothing this plugin creates touches an SSO/SAML/OIDC/OAuth/LDAP integration's co
 
 ## Compatibility & interaction with other 2FA setups
 
-This plugin works **exclusively through the [Two Factor](https://wordpress.org/plugins/two-factor/)
-plugin** — it hooks Two Factor's filters and the `Two_Factor_Email` provider, and
-does nothing else.
+This plugin supplies its email fallback through the
+[Two Factor](https://wordpress.org/plugins/two-factor/) plugin. It also recognizes
+active Wordfence Login Security 2FA so the two plugins do not challenge the same
+user.
 
 - **Two Factor already active (with or without the WebAuthn provider):** fully
-  additive. The Email provider is *appended* to each user's enabled providers, never
-  substituted. Users who already set up TOTP, WebAuthn/passkeys, or backup codes
-  **keep them as their primary factor**; email is just added as an always-available
-  floor. Existing per-user settings are untouched — deactivating this plugin reverts
-  everyone to exactly what they had.
+  compatible. Users with an enabled and currently available TOTP, WebAuthn/passkey,
+  backup-code, or other non-Email provider do not receive the forced Email provider.
+  An unconfigured provider or exhausted backup-code set does not suppress the
+  fallback. Existing per-user settings are untouched; if a user independently
+  enabled Email alongside another method, this plugin does not remove it.
 
-- **Users with no 2FA yet:** email enforcement applies at their next login.
+- **Users with no usable 2FA yet:** Email is returned as their sole runtime Two
+  Factor provider, making it the default and primary method at their next login.
+  The filter does not rewrite their stored provider metadata.
+
+- **Wordfence Login Security:** a user for whom Wordfence reports active 2FA is
+  automatically exempt from this plugin's interactive Email enforcement and optional
+  blocking mode. Merely installing Wordfence is not enough; its 2FA must be active for
+  that user. If Wordfence's integration API is unavailable or fails, Email remains the
+  safe fallback.
 
 - **Two Factor not active:** this plugin still activates, but the runtime
   `force_2fa_dependency_met()` guard (Two Factor loaded **and** the Email provider
@@ -599,20 +610,21 @@ does nothing else.
   with a one-click button to install/activate Two Factor. The same guard covers the
   case where Two Factor is disabled later.
 
-- **A different 2FA plugin** (Wordfence Login Security, WP 2FA, miniOrange, Duo,
-  etc.): this plugin **does not integrate with or affect them** — they don't expose
-  Two Factor's hooks. A competing 2FA plugin also does **not** satisfy this
-  dependency: without the actual Two Factor plugin active, this plugin stays a
-  no-op and keeps prompting you to install it.
+- **Another external 2FA plugin** (WP 2FA, miniOrange, Duo, etc.): not currently
+  detected. Only Wordfence has a built-in external-provider check in this release.
+  A different plugin does not replace the Two Factor dependency; without Two Factor
+  active, this plugin remains a no-op and continues to show its dependency notice.
 
 > [!WARNING]
 > **SSO is a separate authentication boundary.** This plugin is not an SSO MFA enforcement layer. It enforces through the Two Factor plugin's normal WordPress login and API-login hooks. Some SSO plugins (SAML, OIDC/OAuth, LDAP, Jetpack SSO, etc.) can bypass the local login challenge; others may trigger a second local Two Factor prompt or conflict with the SSO callback. If SSO is your primary login path, enforce MFA at the identity provider, test both SSO and direct `wp-login.php` on staging, and keep a break-glass administrator account with known-good local access and backup codes.
 
 > [!CAUTION]
-> **Don't run two 2FA enforcement stacks at once.** If both Two Factor (with this plugin) and a separate 2FA plugin gate the login flow, you risk double prompts or lockouts. Pick one stack; this plugin assumes that stack is Two Factor.
+> Automatic Wordfence detection prevents this plugin from adding Email for Wordfence
+> users with active 2FA. Test direct login, recovery, and activation/deactivation
+> transitions on staging.
 
 > [!NOTE]
-> **Edge case:** if an admin has deliberately unregistered the Email provider via the `two_factor_providers` filter, `force_2fa_dependency_met()` reports the dependency as unmet (it checks `Two_Factor_Core::get_providers()`, not just that the class exists), so this plugin does **not** append Email — it would be unusable — and enforcement safely no-ops rather than injecting a provider Two Factor can't resolve.
+> **Edge case:** if an admin has deliberately unregistered the Email provider via the `two_factor_providers` filter, `force_2fa_dependency_met()` reports the dependency as unmet (it checks `Two_Factor_Core::get_providers()`, not just that the class exists), so this plugin does **not** supply Email — it would be unusable — and enforcement safely no-ops rather than injecting a provider Two Factor can't resolve.
 
 ---
 
@@ -624,10 +636,10 @@ the plugin as a control.
 
 ### What it enforces
 
-- **Interactive logins (`wp-login.php`): every non-exempt user must clear a second
-  factor.** Email is added as a universal, no-setup floor, so a user who never
-  configured 2FA is still challenged. Users who set up a stronger factor (TOTP,
-  WebAuthn) keep it as their primary method; the floor never replaces it.
+- **Interactive logins (`wp-login.php`): every in-scope user without another active
+  2FA method must clear the Email challenge.** Users with another enabled and
+  currently available Two Factor provider, or active Wordfence 2FA, are left to that
+  method instead. Exhausted backup codes do not count as available.
 - **XML-RPC logins: a real-password login by a 2FA-enforced user is denied.**
   WordPress's interactive challenge can't run over the API, so Two Factor blocks
   the API login instead — unless the request used an Application Password.
@@ -649,16 +661,15 @@ the plugin as a control.
   Passwords are a core feature that behaves this way with or without this plugin.
   Closing it (making the allowlist cover REST too) is on the roadmap:
   [#41](https://github.com/dknauss/Require-Email-2FA/issues/41).
-- **Excluding a role opts those accounts out of the API-login gate as well.** An
-  excluded account with no other factor isn't "using 2FA," so Two Factor never
-  gates *any* of its logins — XML-RPC included. Exclusion is broader than "don't
-  force the email step."
+- **The XML-RPC allowlist remains independent.** Scope exclusions and active
+  Wordfence 2FA suppress this plugin's interactive Email behavior, but every XML-RPC
+  account is still held to the allowlist plus Application-Password policy.
 - **It does not enforce MFA inside external identity providers.** SSO/SAML/OIDC/
   OAuth/LDAP/Jetpack SSO logins that bypass `wp-login.php` are the identity
   provider's responsibility; enforce MFA there.
-- **Email is a floor, and email is weaker than TOTP/WebAuthn.** It exists so
-  *everyone* has a second factor with zero setup, not because it is the strongest
-  option. Encourage privileged users to configure a stronger factor.
+- **Email is the fallback, and email is weaker than TOTP/WebAuthn.** It exists so
+  otherwise-unprotected users have a second factor with zero setup. Encourage
+  privileged users to configure a stronger factor.
 
 ### How to use it properly
 
@@ -694,8 +705,9 @@ the plugin as a control.
   **Resend Code** or restart the login to generate a fresh email code. Repeated
   invalid attempts are handled by the Two Factor plugin's rate limiting and
   failed-attempt protections.
-- **Only the Two Factor plugin is enforced.** Other 2FA plugins are not affected,
-  and they do not satisfy the Two Factor dependency this plugin needs.
+- **Only Wordfence is detected among external 2FA plugins.** Other external 2FA
+  plugins are not currently recognized, and none satisfies the required Two Factor
+  dependency.
 - **Multisite is network-only, and depends on Two Factor being network-active.**
   Per-site activation is blocked; but even network-activated, a true network-wide
   guarantee requires the Two Factor plugin to *also* be network-active (the
@@ -707,8 +719,8 @@ the plugin as a control.
   not restrict them — scope REST access via roles/capabilities instead. See the
   **Security model** section above. Extending the allowlist to cover REST is on the
   roadmap: [#41](https://github.com/dknauss/Require-Email-2FA/issues/41).
-- **Email can be weaker than TOTP/WebAuthn.** This plugin uses Email as a universal
-  no-setup floor while preserving stronger factors users have already configured.
+- **Email can be weaker than TOTP/WebAuthn.** This plugin uses Email as the
+  no-setup fallback when another active method is not detected.
 
 
 ---
@@ -735,9 +747,9 @@ Tests run on a zero-dependency stub bootstrap (no WordPress install required):
 
 - **Unit** — the security-critical decision logic: role exclusions, the API-login
   allowlist, and both filter callbacks.
-- **Integration** — the plugin's contract with Two Factor: that appending Email
-  makes `Two_Factor_Core::is_user_using_two_factor()` true (the login challenge
-  fires), excluded users stay unenforced, and a user's stronger factor is kept.
+- **Integration** — the plugin's contract with Two Factor: Email makes
+  `Two_Factor_Core::is_user_using_two_factor()` true for an otherwise-unprotected
+  user, while excluded users and users with another provider stay untouched.
 
 ```sh
 composer install

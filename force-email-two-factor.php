@@ -3,7 +3,7 @@
  * Plugin Name:      Require Email 2FA
  * Plugin URI:       https://github.com/we-are-pixel/Require-Email-2FA
  * Update URI:       https://github.com/we-are-pixel/Require-Email-2FA
- * Description:      Requires the Two Factor plugin and makes emailed 2FA a required login factor for all users (optionally scoped to a capability, e.g. administrators).
+ * Description:      Requires the Two Factor plugin and supplies emailed 2FA for users who do not already use another two-factor method (optionally scoped to a capability).
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
  * Version:          1.13.0
@@ -393,10 +393,10 @@ function force_2fa_excluded_roles() {
 /**
  * Effective capability that defines the enforcement SCOPE.
  *
- * DEFAULT IS '' → the capability gate is OFF and 2FA is forced on EVERY user. This
- * is the shipped security baseline and is unchanged from earlier versions: the
- * emailed floor (and, with it, the XML-RPC API-login hardening) covers all accounts,
- * not just administrators.
+ * DEFAULT IS '' → the capability gate is OFF and EVERY user is in scope. Users with
+ * another active 2FA method are still exempt from this plugin's Email fallback. The
+ * separate XML-RPC API-login hardening covers all accounts regardless of this scope
+ * or exemption state.
  *
  * OPT-IN: define FORCE_2FA_ENFORCED_CAPABILITY (or use the filter below) to NARROW
  * enforcement to users holding that capability. For example, admins-only:
@@ -571,12 +571,12 @@ function force_2fa_should_prompt_scope( $constant_defined, $choice_stored, $user
 /**
  * Whether optional "blocking" enforcement is enabled.
  *
- * Default is OFF → this plugin's normal soft floor: the Email provider is appended so
- * the login challenge fires for everyone, but a user who has never set up 2FA is not
- * otherwise obstructed. Turn blocking mode ON to additionally gate the site — a
- * logged-in, non-exempt user who has not explicitly enabled ANY provider in their Two
- * Factor profile is redirected to their profile page (where Two Factor's own setup UI
- * lives) until they enable one.
+ * Default is OFF → this plugin's normal soft fallback: the Email provider is supplied
+ * for a user with no other active 2FA method, but an unconfigured user is not otherwise
+ * obstructed. Turn blocking mode ON to additionally gate the site — a logged-in,
+ * non-exempt user who has not explicitly enabled ANY provider in their Two Factor
+ * profile is redirected to their profile page (where Two Factor's own setup UI lives)
+ * until they enable one.
  *
  * Enable it from wp-config.php (checked with defined(), NOT declared here as a const —
  * so, like FORCE_2FA_DISABLE, defining it in wp-config can never clash with a plugin-side
@@ -847,11 +847,48 @@ function force_2fa_flush_exemption_cache( $user_id = 0 ) {
 }
 
 /**
+ * Whether Wordfence Login Security reports active 2FA for a user.
+ *
+ * Wordfence exposes this through its public user controller. Detect the integration
+ * defensively so Wordfence being absent, inactive, or changed never causes a fatal.
+ * On any integration error, return false so this plugin retains its email fallback.
+ *
+ * @param WP_User $user The resolved user.
+ * @return bool True when Wordfence reports active 2FA for the user.
+ */
+function force_2fa_wordfence_2fa_active( WP_User $user ) {
+	$controller_class = 'WordfenceLS\\Controller_Users';
+
+	if (
+		! class_exists( $controller_class )
+		|| ! is_callable( array( $controller_class, 'shared' ) )
+	) {
+		return false;
+	}
+
+	try {
+		$controller = call_user_func( array( $controller_class, 'shared' ) );
+		if (
+			! is_object( $controller )
+			|| ! is_callable( array( $controller, 'has_2fa_active' ) )
+		) {
+			return false;
+		}
+
+		return (bool) call_user_func( array( $controller, 'has_2fa_active' ), $user );
+	} catch ( Throwable $exception ) {
+		// A third-party integration failure must not disable this plugin's fallback.
+		return false;
+	}
+}
+
+/**
  * Whether a user is exempt from forced two-factor.
  *
  * Glue: takes the memoized computation (capability scope + excluded roles, evaluated
- * network-wide on multisite — see force_2fa_compute_exemption) and always applies the
- * 'force_2fa_user_is_exempt' filter so programmatic overrides stay dynamic per call.
+ * network-wide on multisite — see force_2fa_compute_exemption), recognizes active
+ * Wordfence 2FA, and always applies the 'force_2fa_user_is_exempt' filter so
+ * programmatic overrides stay dynamic per call.
  * By default the enforced capability is '' (no gate), so EVERY user is in scope;
  * defining FORCE_2FA_ENFORCED_CAPABILITY narrows enforcement (e.g. admins-only), and
  * FORCE_2FA_EXCLUDED_ROLES further carves out roles among in-scope users.
@@ -861,32 +898,106 @@ function force_2fa_flush_exemption_cache( $user_id = 0 ) {
  */
 function force_2fa_user_is_exempt( WP_User $user ) {
 	$exempt = force_2fa_compute_exemption( $user );
+	if ( ! $exempt && force_2fa_wordfence_2fa_active( $user ) ) {
+		$exempt = true;
+	}
 
 	/**
 	 * Filter the per-user exemption from forced two-factor.
 	 *
-	 * @param bool    $exempt Whether the user is exempt (capability scope + excluded roles).
+	 * @param bool    $exempt Whether the user is exempt (scope, roles, or Wordfence 2FA).
 	 * @param WP_User $user   The user being evaluated.
 	 */
 	return (bool) apply_filters( 'force_2fa_user_is_exempt', $exempt, $user );
 }
 
 /**
- * Make two-factor mandatory by ensuring the Email provider is enabled for every
- * in-scope user (by default ALL users; see FORCE_2FA_EXCLUDED_ROLES and the opt-in
- * FORCE_2FA_ENFORCED_CAPABILITY for how scope and exemptions are determined).
+ * Get provider keys that are currently configured and available for a user.
  *
- * Why this works: the Two Factor plugin treats a user as "using 2FA" whenever
- * they have at least one available provider. Two_Factor_Email::is_available_for_user()
- * returns true unconditionally and needs no per-user setup (it just mails a code
- * to the account address), so adding it as a floor forces the login challenge
- * for every user it is applied to — including those who never configured anything.
+ * This deliberately does not call Two_Factor_Core::get_available_providers_for_user():
+ * that method calls the enabled-provider filter we are currently servicing and would
+ * recurse. Instead, inspect the supported provider instances directly. An integration
+ * error returns an empty list so Email remains the fail-safe fallback.
  *
- * Why APPEND (not replace): returning array( 'Two_Factor_Email' ) would strip
- * each user's stronger factors (TOTP, hardware keys) AND their backup codes on
- * every read, forcing the whole site down to email-only and removing the
- * recovery path. Appending instead guarantees an email floor while leaving any
- * stronger, user-chosen factor in place and primary.
+ * @param WP_User $user The resolved user.
+ * @return string[] Provider keys currently available to the user.
+ */
+function force_2fa_available_provider_keys( WP_User $user ) {
+	$core_class = 'Two_Factor_Core';
+	if ( ! is_callable( array( $core_class, 'get_supported_providers_for_user' ) ) ) {
+		return array();
+	}
+
+	try {
+		$providers = call_user_func(
+			array( $core_class, 'get_supported_providers_for_user' ),
+			$user
+		);
+	} catch ( Throwable $exception ) {
+		return array();
+	}
+
+	if ( ! is_array( $providers ) ) {
+		return array();
+	}
+
+	$available = array();
+	foreach ( $providers as $provider_key => $provider ) {
+		if (
+			! is_string( $provider_key )
+			|| ! is_object( $provider )
+			|| ! is_callable( array( $provider, 'is_available_for_user' ) )
+		) {
+			continue;
+		}
+
+		try {
+			if ( call_user_func( array( $provider, 'is_available_for_user' ), $user ) ) {
+				$available[] = $provider_key;
+			}
+		} catch ( Throwable $exception ) {
+			// A broken provider must not suppress the known-good Email fallback.
+			continue;
+		}
+	}
+
+	return $available;
+}
+
+/**
+ * Whether an enabled non-Email provider is currently available.
+ *
+ * Pure decision: require the provider key to appear in both lists. An enabled but
+ * unconfigured provider — or exhausted backup codes — must not suppress Email.
+ *
+ * @param array $enabled_providers   Provider class-name keys enabled for the user.
+ * @param array $available_providers Provider keys currently available to the user.
+ * @return bool True when another usable Two Factor provider is enabled.
+ */
+function force_2fa_has_available_alternative_provider( array $enabled_providers, array $available_providers ) {
+	foreach ( $enabled_providers as $provider ) {
+		if (
+			is_string( $provider )
+			&& '' !== $provider
+			&& 'Two_Factor_Email' !== $provider
+			&& in_array( $provider, $available_providers, true )
+		) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Supply emailed 2FA only when an in-scope user has no other active method.
+ *
+ * The Two Factor plugin treats a user as "using 2FA" whenever at least one
+ * provider is enabled. Its Email provider needs no per-user setup, so supplying
+ * it gives otherwise-unprotected users a login challenge. Users with another
+ * usable Two Factor provider or active Wordfence 2FA are left untouched. For an
+ * otherwise-unprotected user, Email is returned as the sole runtime provider so it
+ * is unambiguously the default and primary method. Stored settings are not mutated.
  *
  * Fail-safe: if the Email provider class is absent (plugin inactive/removed) we
  * return the list untouched. We never silently delete an existing factor, and
@@ -894,8 +1005,7 @@ function force_2fa_user_is_exempt( WP_User $user ) {
  *
  * @param string[] $enabled_providers Provider class-name keys enabled for the user.
  * @param int      $user_id           User ID.
- * @return string[] The enabled providers, guaranteed to include Two_Factor_Email
- *                  when that provider exists.
+ * @return string[] Existing usable 2FA providers, or Email alone as the fallback.
  */
 function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
 	// Plugin gone / provider unregistered: do not touch the list. (Defensive guard
@@ -917,12 +1027,21 @@ function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
 		$enabled_providers = array();
 	}
 
-	// Strict in_array(): these are class-name strings, so avoid loose matching.
-	if ( ! in_array( 'Two_Factor_Email', $enabled_providers, true ) ) {
-		$enabled_providers[] = 'Two_Factor_Email';
+	// Another usable native Two Factor method already protects this user. Return
+	// the exact stored list: do not force Email and do not remove a user choice.
+	if (
+		$user
+		&& force_2fa_has_available_alternative_provider(
+			$enabled_providers,
+			force_2fa_available_provider_keys( $user )
+		)
+	) {
+		return $enabled_providers;
 	}
 
-	return $enabled_providers;
+	// No usable alternative exists. Return Email alone at runtime, making it the
+	// sole/default/primary provider without mutating the user's stored provider meta.
+	return array( 'Two_Factor_Email' );
 }
 
 /**
@@ -934,8 +1053,8 @@ function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
  * skip 2FA ONLY when the request authenticated via an Application Password (it
  * keys off did_action('application_password_did_authenticate')). A plain
  * real-password login over XML-RPC/REST is therefore already blocked for any
- * 2FA-enabled user. Our enforcement filter above makes every user 2FA-enabled,
- * so that default applies site-wide.
+ * 2FA-enabled user. This plugin's own authenticate gate below extends the XML-RPC
+ * policy to every user, independently of provider or exemption state.
  *
  * What THIS allowlist adds: on the authenticate path (XML-RPC — see SCOPE below),
  * the plugin's default still lets ANY user log in as long as they present an
@@ -1199,8 +1318,8 @@ function force_2fa_enabled_providers_meta_key() {
  *
  * This is the pure decision behind force_2fa_user_has_configured_2fa(): a non-empty
  * ARRAY means the user explicitly enabled at least one provider in their profile.
- * Anything else (unset '', false, a scalar) means they have not — the Email floor this
- * plugin appends at runtime via the 'two_factor_enabled_providers_for_user' filter is
+ * Anything else (unset '', false, a scalar) means they have not — the Email fallback this
+ * plugin supplies at runtime via the 'two_factor_enabled_providers_for_user' filter is
  * NOT written to this meta, so it never counts as "configured". Unit-tested directly.
  *
  * @param mixed $meta Raw get_user_meta() value for the enabled-providers key.
@@ -1214,8 +1333,8 @@ function force_2fa_meta_indicates_configured( $meta ) {
  * Whether a user has explicitly configured (enabled) at least one 2FA provider.
  *
  * Reads Two Factor's stored enabled-providers meta and defers the verdict to the pure
- * force_2fa_meta_indicates_configured(). Because this plugin appends Email at runtime
- * WITHOUT persisting it, a user who has only the forced Email floor reads as NOT
+ * force_2fa_meta_indicates_configured(). Because this plugin supplies Email at runtime
+ * WITHOUT persisting it, a user who has only the forced Email fallback reads as NOT
  * configured — which is exactly the signal blocking mode needs to know it must still
  * send them through setup.
  *
@@ -1780,8 +1899,9 @@ function force_2fa_scope_manage_capability() {
  *
  * Shown on the admin (and network admin) until a choice is stored or
  * FORCE_2FA_ENFORCED_CAPABILITY is defined in code. Until a choice is made the SECURE
- * default (all users) applies — and the default floor only adds the email challenge, it
- * does not block anyone — so there is no lockout window. Submitting posts to
+ * default (all users) applies — and the default fallback only adds the email challenge
+ * for users without another active method; it does not block anyone — so there is no
+ * lockout window. Submitting posts to
  * force_2fa_handle_set_scope() via admin-post.php.
  *
  * @return void

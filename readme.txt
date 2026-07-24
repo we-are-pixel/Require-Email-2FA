@@ -8,13 +8,14 @@ Stable tag: 1.13.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Requires the Two Factor plugin and makes emailed 2FA a required login factor for all users, with optional capability-scoping (e.g. admins-only) and per-role exclusions.
+Requires the Two Factor plugin and supplies emailed 2FA for users who do not already use another two-factor method, with optional capability and role scoping.
 
 == Description ==
 
 Builds on the [Two Factor](https://wordpress.org/plugins/two-factor/) plugin and
-makes its emailed 2FA codes a mandatory baseline for every user — so the login
-challenge appears even for accounts that never set up two-factor. Enforcement can
+supplies its emailed 2FA codes when a user has no other active method — so the
+login challenge appears even for accounts that never set up two-factor, without
+double-challenging users already protected by another method. Enforcement can
 optionally be narrowed to a capability (e.g. admins-only) or scoped with per-role
 exclusions. Two Factor must
 be active for any enforcement to happen; if it is not, this plugin activates but
@@ -23,12 +24,11 @@ it is network-only: Network Activate it (per-site activation is blocked).
 
 It does two things:
 
-1. **Forces 2FA for everyone (by default).** It ensures the always-available,
-   zero-setup Email provider is enabled for every user, so the login challenge
-   appears for all accounts — including those that never configured 2FA.
-   Enforcement is appended rather than replacing the user's provider list, so
-   users who set up a stronger factor (TOTP, hardware key / WebAuthn) keep it as
-   their primary method, and backup codes remain available as a recovery path.
+1. **Forces 2FA for otherwise-unprotected users (by default).** It supplies the
+   zero-setup Email provider when a user has no other active method. Users with
+   a currently available TOTP, hardware key / WebAuthn, backup codes, or active
+   Wordfence Login Security 2FA are left untouched. Existing provider choices are
+   never removed.
    Enforcement can optionally be narrowed to a capability via
    `FORCE_2FA_ENFORCED_CAPABILITY` (e.g. `manage_options` for admins-only) and
    further scoped with per-role exclusions.
@@ -57,8 +57,8 @@ It does two things:
 
 = Features =
 
-* Mandatory email two-factor as a universal floor, with no per-user setup.
-* Stronger user-configured factors (TOTP, WebAuthn) and backup codes preserved.
+* Email two-factor as a zero-setup fallback for otherwise-unprotected users.
+* Native Two Factor alternatives and active Wordfence 2FA suppress the fallback.
 * Optional capability-scoping to narrow enforcement (e.g. admins-only) via
   `FORCE_2FA_ENFORCED_CAPABILITY`; default is all users.
 * Per-role exclusions, defaulting to "all users" (`FORCE_2FA_EXCLUDED_ROLES`).
@@ -110,8 +110,8 @@ Before production activation:
 
 = Does it still require the Two Factor plugin? =
 
-Yes — Two Factor (`two-factor`) provides the Email provider this plugin makes
-mandatory, so nothing is enforced without it. As of 1.8.0 the dependency is no
+Yes — Two Factor (`two-factor`) provides the Email fallback, so nothing is
+enforced without it. As of 1.8.0 the dependency is no
 longer a hard activation gate. This plugin activates on its own, no-ops while Two
 Factor is inactive, and shows an admin notice with a one-click install/activate
 button. The `Requires at least: 6.8` floor tracks Two Factor's own requirement:
@@ -134,7 +134,8 @@ plugin's rate limiting and failed-attempt protections.
 
 = Who is required to use 2FA, and how do I change it? =
 
-By default, every user is. Right after you activate the plugin, a one-time admin notice
+By default, every user is in scope, but users with another active 2FA method are
+left to that method. Right after you activate the plugin, a one-time admin notice
 lets you pick the scope with a radio — All users / Editors and up / Administrators only
 (administrators pre-selected) — and one click saves it; until you choose, the secure
 default (all users) applies. To change the choice later, deactivate and reactivate the
@@ -299,17 +300,27 @@ the repository protections. Full guide — GitHub settings, artifact verificatio
 safe forking, incident response — in `docs/SUPPLY-CHAIN-SECURITY.md`:
 https://github.com/we-are-pixel/Require-Email-2FA/blob/main/docs/SUPPLY-CHAIN-SECURITY.md
 
-= Does this remove a user's authenticator app or hardware key? =
+= What happens when a user already has another 2FA method? =
 
-No. It appends the Email provider as a floor; any stronger factor the user
-configured stays in place and remains their primary method.
+This plugin leaves them alone. Any non-Email provider enabled through Two Factor
+and currently available to the user (including TOTP, WebAuthn, or backup codes)
+suppresses the Email fallback. An unconfigured provider or exhausted backup-code
+set does not. Active Wordfence Login Security 2FA is recognized automatically.
+Merely installing Wordfence is not enough: 2FA must be active for that user.
+
+When no usable native method or active Wordfence 2FA exists, Email is returned as
+the user's sole runtime Two Factor provider, making it the default and primary
+method. Stored provider metadata is not rewritten. These exemptions apply to the
+interactive Email requirement and optional blocking mode; the independent XML-RPC
+allowlist still applies to every account.
 
 = What are the known limitations? =
 
 Mail delivery is part of the security boundary; if outbound email fails, users
 without a stronger factor can be locked out until mail is fixed or
-`FORCE_2FA_DISABLE` is enabled. This plugin only enforces the Two Factor plugin
-and does not integrate with other 2FA plugins or enforce MFA inside external SSO
+`FORCE_2FA_DISABLE` is enabled. Wordfence is the only external 2FA plugin detected
+automatically; other external plugins are not currently recognized and do not
+replace the Two Factor dependency. This plugin does not enforce MFA inside external SSO
 providers. On multisite it is network-only (per-site activation is blocked); a true
 network-wide guarantee also depends on Two Factor itself being network-active. The
 API-login allowlist governs XML-RPC only: an XML-RPC login can skip the interactive
