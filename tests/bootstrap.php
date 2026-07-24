@@ -366,6 +366,30 @@ if ( ! class_exists( 'WP_User' ) ) {
 	}
 }
 
+// Wordfence Login Security stand-in for the external-2FA integration. has_2fa_active()
+// is driven by $GLOBALS['__force2fa_wordfence_2fa_users'] (a list of user IDs); a test
+// sets __force2fa_wordfence_throw to exercise the fail-safe try/catch. Aliased to the
+// real namespaced class name the plugin looks up.
+if ( ! class_exists( 'WordfenceLS\\Controller_Users' ) ) {
+	class Force2FA_Wordfence_Users_Stub {
+		public static function shared() {
+			static $instance;
+			if ( null === $instance ) {
+				$instance = new self();
+			}
+			return $instance;
+		}
+
+		public function has_2fa_active( $user ) {
+			if ( ! empty( $GLOBALS['__force2fa_wordfence_throw'] ) ) {
+				throw new \RuntimeException( 'Simulated Wordfence integration failure.' );
+			}
+			return in_array( (int) $user->ID, $GLOBALS['__force2fa_wordfence_2fa_users'] ?? array(), true );
+		}
+	}
+	class_alias( 'Force2FA_Wordfence_Users_Stub', 'WordfenceLS\\Controller_Users' );
+}
+
 // Present by default so the enforcement filter takes its append path. The
 // class-absent guard in force_2fa_dependency_met() is exercised by the separate
 // bootstrap-no-two-factor.php run, which defines FORCE2FA_TEST_NO_TWO_FACTOR to
@@ -393,6 +417,18 @@ if ( ! defined( 'FORCE2FA_TEST_NO_TWO_FACTOR' ) && ! class_exists( 'Two_Factor_C
 
 		public static function get_enabled_providers_for_user( $user_id, array $stored = array() ) {
 			return force_2fa_filter_enabled_providers( $stored, $user_id );
+		}
+
+		// Available (configured + usable) providers, keyed by class name. Driven by a
+		// global a test sets via TestCase::availableProviders(); used by the primary-
+		// provider logic (force_2fa_user_has_real_2fa_method).
+		public static function get_available_providers_for_user( $user ) {
+			$id  = is_object( $user ) ? (int) $user->ID : (int) $user;
+			$out = array();
+			foreach ( $GLOBALS['__force2fa_available_providers'][ $id ] ?? array() as $key ) {
+				$out[ $key ] = new \stdClass();
+			}
+			return $out;
 		}
 
 		public static function get_primary_provider_for_user( $user_id, array $stored = array() ) {

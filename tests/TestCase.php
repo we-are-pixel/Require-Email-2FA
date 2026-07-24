@@ -33,6 +33,9 @@ abstract class TestCase extends BaseTestCase {
 		$GLOBALS['__force2fa_user_blogs']           = array();
 		$GLOBALS['__force2fa_get_blogs_calls']      = 0;
 		$GLOBALS['force_2fa_exempt_cache']          = array();
+		$GLOBALS['__force2fa_wordfence_2fa_users']  = array();
+		$GLOBALS['__force2fa_available_providers']  = array();
+		unset( $GLOBALS['__force2fa_wordfence_throw'] );
 		unset( $GLOBALS['force_2fa_app_password_user_id'], $GLOBALS['__force2fa_providers'], $GLOBALS['__force2fa_is_network_admin'], $GLOBALS['__force2fa_user_caps'], $GLOBALS['__force2fa_is_multisite'], $GLOBALS['__force2fa_sites'], $GLOBALS['__force2fa_nonce_ok'] );
 
 		// Start every test from "Two Factor not on disk" so the on-disk check is
@@ -146,6 +149,21 @@ abstract class TestCase extends BaseTestCase {
 	/** Set the API-login allowlist seen by the plugin. */
 	protected function allowlist( array $entries ): void {
 		$this->setFilter( 'force_2fa_api_login_allowlist', $entries );
+	}
+
+	/** Mark a user as having active 2FA in the (stubbed) Wordfence integration. */
+	protected function wordfence2fa( int $userId ): void {
+		$GLOBALS['__force2fa_wordfence_2fa_users'][] = $userId;
+	}
+
+	/** Make the stubbed Wordfence integration throw, to exercise the fail-safe path. */
+	protected function wordfenceThrows(): void {
+		$GLOBALS['__force2fa_wordfence_throw'] = true;
+	}
+
+	/** Set the provider class-name keys Two Factor reports as available for a user. */
+	protected function availableProviders( int $userId, array $providerKeys ): void {
+		$GLOBALS['__force2fa_available_providers'][ $userId ] = $providerKeys;
 	}
 
 	/**

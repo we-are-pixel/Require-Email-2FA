@@ -4,7 +4,7 @@ Tags: two-factor, 2fa, security, authentication, login
 Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.13.0
+Stable tag: 1.13.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -216,6 +216,16 @@ add_filter( 'force_2fa_excluded_roles', function () {
 } );
 `
 
+= What if users already use another 2FA plugin, like Wordfence? =
+
+Those users are skipped — the emailed floor is not added for anyone whose 2FA is handled
+by an external system, so no one is pushed through two 2FA plugins at once (even when the
+other plugin, like Wordfence, offers no email method). A defensive Wordfence Login
+Security check is built in; add other integrations with the `force_2fa_user_has_external_2fa`
+filter (or exempt specific users via `force_2fa_user_is_exempt`). Detection fails safe: if
+it errors, the email floor stays in place. Users on the Two Factor plugin are unaffected —
+email is still their floor, and their TOTP/WebAuthn stays primary.
+
 = How do I let an integration log in over XML-RPC? =
 
 Add its user ID or login to the `FORCE_2FA_API_LOGIN_ALLOWLIST` constant in
@@ -321,6 +331,20 @@ account independently of the 2FA scope, so narrowing the scope (or excluding a r
 never opens XML-RPC to accounts left out of the interactive challenge.
 
 == Changelog ==
+
+= 1.13.1 =
+* New: users whose 2FA is handled by an EXTERNAL system are exempt from the emailed
+  floor, so no one is driven through two 2FA plugins at once. Bundles a defensive
+  Wordfence Login Security check; add others via the `force_2fa_user_has_external_2fa`
+  filter (or the existing `force_2fa_user_is_exempt` filter). Fail-safe — any detection
+  error leaves the email floor in place. Email remains a floor for everyone else,
+  including users who already have a native Two Factor method (TOTP/WebAuthn get their
+  method AND email).
+* Improved: the emailed method becomes the *primary* provider only when the user has no
+  other real method (no method, or backup-codes-only). A real method (TOTP, WebAuthn,
+  …) always keeps primary — the appended email floor no longer demotes it — via Two
+  Factor's `two_factor_primary_provider_for_user` filter. Stored settings are not
+  mutated.
 
 = 1.13.0 =
 * New: a first-run **enforcement-scope prompt**. On activation an admin notice offers a

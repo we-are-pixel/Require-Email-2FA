@@ -6,7 +6,7 @@
  * Description:      Requires the Two Factor plugin and makes emailed 2FA a required login factor for all users (optionally scoped to a capability, e.g. administrators).
  * Author:           Pixel
  * Author URI:       https://wearepixel.ca
- * Version:          1.13.0
+ * Version:          1.13.1
  * Requires at least: 6.8
  * Requires PHP:     7.2
  * License:          GPL-2.0-or-later
@@ -112,7 +112,7 @@ if ( defined( 'FORCE_2FA_DISABLE' ) && FORCE_2FA_DISABLE ) {
 if ( defined( 'FORCE_2FA_LOADED' ) ) {
 	return;
 }
-define( 'FORCE_2FA_LOADED', '1.13.0' );
+define( 'FORCE_2FA_LOADED', '1.13.1' );
 // @codeCoverageIgnoreEnd
 
 /**
@@ -773,6 +773,53 @@ function force_2fa_user_roles_on_site( $user_id, $site_id ) {
 }
 
 /**
+ * Whether Wordfence Login Security reports active 2FA for a user.
+ *
+ * Wordfence exposes this through its public user controller. Detected defensively so
+ * Wordfence being absent, inactive, or changed never causes a fatal — on any
+ * integration error, return false so this plugin keeps supplying its email floor.
+ *
+ * @param WP_User $user The resolved user.
+ * @return bool True when Wordfence reports active 2FA for the user.
+ */
+function force_2fa_wordfence_2fa_active( WP_User $user ) {
+	$controller_class = 'WordfenceLS\\Controller_Users';
+
+	if ( ! class_exists( $controller_class ) || ! is_callable( array( $controller_class, 'shared' ) ) ) {
+		return false;
+	}
+
+	try {
+		$controller = call_user_func( array( $controller_class, 'shared' ) );
+		if ( ! is_object( $controller ) || ! is_callable( array( $controller, 'has_2fa_active' ) ) ) {
+			return false;
+		}
+
+		return (bool) call_user_func( array( $controller, 'has_2fa_active' ), $user );
+	} catch ( Throwable $exception ) {
+		// A third-party integration failure must not disable this plugin's floor.
+		return false;
+	}
+}
+
+/**
+ * Whether the user's 2FA is handled by an EXTERNAL system (not the Two Factor plugin).
+ *
+ * When true, this plugin exempts the user from its emailed floor, so they are never
+ * driven through two different 2FA plugins at once (which is confusing and error-prone,
+ * even when — as with Wordfence — the other plugin offers no email method). A defensive
+ * Wordfence Login Security check is bundled; integrators add others through the
+ * 'force_2fa_user_has_external_2fa' filter (or the broader 'force_2fa_user_is_exempt'
+ * filter). Fail-safe: any detection error leaves the email floor in place.
+ *
+ * @param WP_User $user The resolved user.
+ * @return bool
+ */
+function force_2fa_user_has_external_2fa( WP_User $user ) {
+	return (bool) apply_filters( 'force_2fa_user_has_external_2fa', force_2fa_wordfence_2fa_active( $user ), $user );
+}
+
+/**
  * The computed (pre-filter) exemption for a user — memoized per request.
  *
  * This is the expensive half: on multisite it can iterate the user's sites (once in
@@ -817,6 +864,13 @@ function force_2fa_compute_exemption( WP_User $user ) {
 		$enforced_capability,
 		$has_capability
 	);
+
+	// Also exempt when the user's 2FA is handled by an external system (e.g. Wordfence
+	// Login Security): don't ALSO supply the Two Factor email floor, so a user is never
+	// driven through two different 2FA plugins at once. Memoized with the rest.
+	if ( ! $exempt && force_2fa_user_has_external_2fa( $user ) ) {
+		$exempt = true;
+	}
 
 	$GLOBALS['force_2fa_exempt_cache'][ $user_id ][ $blog_id ] = $exempt;
 
@@ -865,7 +919,7 @@ function force_2fa_user_is_exempt( WP_User $user ) {
 	/**
 	 * Filter the per-user exemption from forced two-factor.
 	 *
-	 * @param bool    $exempt Whether the user is exempt (capability scope + excluded roles).
+	 * @param bool    $exempt Whether the user is exempt (capability scope, excluded roles, or external 2FA).
 	 * @param WP_User $user   The user being evaluated.
 	 */
 	return (bool) apply_filters( 'force_2fa_user_is_exempt', $exempt, $user );
@@ -923,6 +977,90 @@ function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
 	}
 
 	return $enabled_providers;
+}
+
+/**
+ * The first available Two Factor provider that counts as a REAL primary method —
+ * available, and neither Email nor Backup Codes — or null if the user has none.
+ *
+ * Backup Codes are a finite recovery mechanism, not a primary interactive factor, so a
+ * backup-codes-only user is treated as having no real method (the emailed floor becomes
+ * their primary). "First" follows Two Factor's own available-provider order. Uses
+ * get_available_providers_for_user(); safe from recursion — that calls the
+ * enabled-providers filter this plugin hooks, which never calls the primary-provider
+ * filter. Any integration error returns null so Email can serve as primary.
+ *
+ * @param WP_User $user The resolved user.
+ * @return string|null Provider class-name key, or null when no real method is available.
+ */
+function force_2fa_first_real_2fa_method( WP_User $user ) {
+	$core_class = 'Two_Factor_Core';
+	if ( ! is_callable( array( $core_class, 'get_available_providers_for_user' ) ) ) {
+		return null;
+	}
+
+	try {
+		$available = call_user_func( array( $core_class, 'get_available_providers_for_user' ), $user );
+	} catch ( Throwable $exception ) {
+		return null;
+	}
+
+	if ( ! is_array( $available ) ) {
+		return null; // WP_Error or unexpected → no usable real method.
+	}
+
+	foreach ( $available as $provider_key => $provider ) {
+		if (
+			is_string( $provider_key )
+			&& 'Two_Factor_Email' !== $provider_key
+			&& 'Two_Factor_Backup_Codes' !== $provider_key
+		) {
+			return $provider_key;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Keep the emailed floor from becoming PRIMARY over a real method, and make it primary
+ * only when the user has no real method (no method, or backup-codes-only).
+ *
+ * Hooked to Two Factor's 'two_factor_primary_provider_for_user'. Two Factor resolves the
+ * primary from the user's stored selection or the first available provider — and Email
+ * sorts first in its registration order, so an appended Email floor can otherwise become
+ * primary over TOTP/WebAuthn for a user with no stored selection, while a
+ * backup-codes-only user keeps Backup Codes as primary. Policy: a real method always
+ * outranks the email floor for primary. So if the resolved primary is already a real
+ * method, keep it; if it is Email or Backup Codes, switch to the first available real
+ * method when one exists, otherwise the emailed floor is primary. Runs only when the
+ * plugin is actually flooring Email for this user (dependency met, in scope, not exempt).
+ * The user's stored primary meta is never mutated — this only affects runtime selection.
+ *
+ * @param string $provider The provider key Two Factor resolved as primary.
+ * @param int    $user_id  The user ID.
+ * @return string The provider key to use as primary.
+ */
+function force_2fa_filter_primary_provider( $provider, $user_id ) {
+	if ( ! force_2fa_dependency_met() ) {
+		return $provider;
+	}
+
+	$user = get_userdata( (int) $user_id );
+	if ( ! $user instanceof WP_User || force_2fa_user_is_exempt( $user ) ) {
+		return $provider; // This plugin is not supplying Email for this user.
+	}
+
+	// A real method is already primary → leave it.
+	if ( 'Two_Factor_Email' !== $provider && 'Two_Factor_Backup_Codes' !== $provider ) {
+		return $provider;
+	}
+
+	// Resolved primary is Email/Backup Codes: prefer a real method if one is available,
+	// otherwise the emailed floor is the sole meaningful method and becomes primary.
+	$real = force_2fa_first_real_2fa_method( $user );
+
+	return null !== $real ? $real : 'Two_Factor_Email';
 }
 
 /**
@@ -2214,6 +2352,7 @@ function force_2fa_site_health_self_update() {
  */
 function force_2fa_register_hooks() {
 	add_filter( 'two_factor_enabled_providers_for_user', 'force_2fa_filter_enabled_providers', 10, 2 );
+	add_filter( 'two_factor_primary_provider_for_user', 'force_2fa_filter_primary_provider', 10, 2 );
 	add_filter( 'two_factor_user_api_login_enable', 'force_2fa_filter_api_login_enable', 10, 2 );
 
 	// Own gate on the authenticate path so the XML-RPC allowlist applies to ALL users,
