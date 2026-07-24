@@ -28,6 +28,23 @@ final class PrimaryProviderTest extends TestCase {
 		$this->assertNull( force_2fa_first_real_2fa_method( $user ) );
 	}
 
+	public function test_dummy_provider_is_not_a_real_method(): void {
+		// Two_Factor_Dummy always validates, so it must never count as a real method or
+		// the email challenge could be bypassed by making Dummy primary.
+		$user = $this->user( 20, 'dbg', array( 'editor' ) );
+		$this->availableProviders( 20, array( 'Two_Factor_Dummy', 'Two_Factor_Email' ) );
+		$this->assertNull( force_2fa_first_real_2fa_method( $user ) );
+	}
+
+	public function test_dummy_does_not_become_primary_over_email(): void {
+		$this->user( 21, 'dbg', array( 'editor' ) );
+		$this->availableProviders( 21, array( 'Two_Factor_Dummy', 'Two_Factor_Email' ) );
+		$this->assertSame(
+			'Two_Factor_Email',
+			force_2fa_filter_primary_provider( 'Two_Factor_Dummy', 21 )
+		);
+	}
+
 	// --- the filter -----------------------------------------------------------
 
 	public function test_backup_codes_only_makes_email_primary(): void {

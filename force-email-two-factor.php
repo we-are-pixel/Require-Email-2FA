@@ -983,10 +983,13 @@ function force_2fa_filter_enabled_providers( $enabled_providers, $user_id ) {
  * The first available Two Factor provider that counts as a REAL primary method —
  * available, and neither Email nor Backup Codes — or null if the user has none.
  *
- * Backup Codes are a finite recovery mechanism, not a primary interactive factor, so a
- * backup-codes-only user is treated as having no real method (the emailed floor becomes
- * their primary). "First" follows Two Factor's own available-provider order. Uses
- * get_available_providers_for_user(); safe from recursion — that calls the
+ * "Real" EXCLUDES Email (the floor we add), Backup Codes (a finite recovery mechanism,
+ * not a primary interactive factor — so a backup-codes-only user is treated as having no
+ * real method, and the emailed floor becomes their primary), and Two_Factor_Dummy (Two
+ * Factor's debug-only provider, whose validate_authentication() returns true
+ * unconditionally — treating it as real would let it become primary and bypass the
+ * mandatory email challenge). "First" follows Two Factor's own available-provider order.
+ * Uses get_available_providers_for_user(); safe from recursion — that calls the
  * enabled-providers filter this plugin hooks, which never calls the primary-provider
  * filter. Any integration error returns null so Email can serve as primary.
  *
@@ -1010,16 +1013,32 @@ function force_2fa_first_real_2fa_method( WP_User $user ) {
 	}
 
 	foreach ( $available as $provider_key => $provider ) {
-		if (
-			is_string( $provider_key )
-			&& 'Two_Factor_Email' !== $provider_key
-			&& 'Two_Factor_Backup_Codes' !== $provider_key
-		) {
+		if ( force_2fa_is_real_2fa_provider_key( $provider_key ) ) {
 			return $provider_key;
 		}
 	}
 
 	return null;
+}
+
+/**
+ * Whether a provider key counts as a REAL primary 2FA method.
+ *
+ * Excludes the emailed floor this plugin supplies (Two_Factor_Email), Backup Codes (a
+ * finite recovery mechanism), and Two_Factor_Dummy (Two Factor's debug provider, whose
+ * validate_authentication() returns true unconditionally — it must never be treated as
+ * real, or it could become primary and bypass the mandatory email challenge). Kept as a
+ * single source of truth so force_2fa_first_real_2fa_method() and
+ * force_2fa_filter_primary_provider() can never drift apart.
+ *
+ * @param mixed $provider_key A provider class-name key.
+ * @return bool
+ */
+function force_2fa_is_real_2fa_provider_key( $provider_key ) {
+	return is_string( $provider_key )
+		&& 'Two_Factor_Email' !== $provider_key
+		&& 'Two_Factor_Backup_Codes' !== $provider_key
+		&& 'Two_Factor_Dummy' !== $provider_key;
 }
 
 /**
@@ -1052,12 +1071,12 @@ function force_2fa_filter_primary_provider( $provider, $user_id ) {
 	}
 
 	// A real method is already primary → leave it.
-	if ( 'Two_Factor_Email' !== $provider && 'Two_Factor_Backup_Codes' !== $provider ) {
+	if ( force_2fa_is_real_2fa_provider_key( $provider ) ) {
 		return $provider;
 	}
 
-	// Resolved primary is Email/Backup Codes: prefer a real method if one is available,
-	// otherwise the emailed floor is the sole meaningful method and becomes primary.
+	// Resolved primary is Email / Backup Codes / Dummy: prefer a real method if one is
+	// available, otherwise the emailed floor is the sole meaningful method → primary.
 	$real = force_2fa_first_real_2fa_method( $user );
 
 	return null !== $real ? $real : 'Two_Factor_Email';
