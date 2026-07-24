@@ -10,8 +10,10 @@
 #     without the fix Email would win first-available), and
 #   - an unprotected user gets Email as their sole provider and primary.
 #
-# (External-2FA exemption, e.g. Wordfence, is unit-tested; installing Wordfence here
-# would be heavyweight and the integration path is a thin, filterable adapter.)
+# (The Wordfence external-2FA exemption is covered by its built-in detector
+# force_2fa_wordfence_2fa_active() and a unit stub; installing real Wordfence here would
+# be heavyweight. Other external systems are handled via the force_2fa_user_is_exempt
+# filter.)
 #
 # Uses the SQLite drop-in. Usage: bin/email-fallback-e2e.sh
 set -euo pipefail
