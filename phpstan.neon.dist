@@ -1,17 +1,15 @@
 includes:
 	- vendor/szepeviktor/phpstan-wordpress/extension.neon
-	- phpstan-baseline.neon
 
 parameters:
-	level: 5
+	level: 6
 	paths:
 		- force-email-two-factor.php
-		- mu-loader.php
 		- uninstall.php
-	# The vendored updater is a real dependency PHPStan should resolve symbols from
-	# (but not analyse itself).
+		- includes
+	# WordPress filters can return anything, so docblock types are not guaranteed at runtime.
+	treatPhpDocTypesAsCertain: false
 	scanDirectories:
 		- vendor/yahnis-elsts
-	# Two Factor is a soft runtime dependency, absent here — stub its called surface.
-	stubFiles:
-		- phpstan/stubs/two-factor.stub
+	scanFiles:
+		- tests/phpstan/two-factor.php

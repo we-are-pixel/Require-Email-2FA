@@ -1,259 +1,79 @@
 name: CI
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
+  # Weekly, to catch a WordPress or Two Factor release that breaks enforcement.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  lint:
-    name: Lint (PHP ${{ matrix.php }})
+  standards:
+    name: Coding standards and static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer audit
+      - run: composer lint
+      - run: composer analyse
+
+  tests:
+    name: Tests (PHP ${{ matrix.php }}, WordPress ${{ matrix.wp }}, Two Factor ${{ matrix.two-factor || 'latest' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        php: [ '7.2', '7.4', '8.0', '8.1', '8.2', '8.3', '8.4' ]
+        include:
+          - php: '7.2'
+            wp: '6.7'
+            two-factor: '0.14.2'
+            # 1.12+ need WordPress 6.8, so 6.7 sites can only be on 1.11.
+            from: 'v1.11.0'
+          - php: '7.4'
+            wp: '6.9'
+            two-factor: '0.16.0'
+          - php: '8.4'
+            wp: latest
+            two-factor: ''
+    env:
+      WP_PHP: php${{ matrix.php }}
+      WP_VERSION: ${{ matrix.wp }}
+      TWO_FACTOR_VERSION: ${{ matrix.two-factor }}
+      FROM_VERSIONS: ${{ matrix.from }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # The test sites run on the matrix PHP; the test runner (PHPUnit 11) needs 8.3.
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php }}
+          extensions: curl, mbstring, pdo_sqlite, sqlite3, xml, zip
           coverage: none
-      - name: php -l all PHP files (excluding vendor)
-        run: |
-          find . -path ./vendor -prune -o -name '*.php' -print0 \
-            | xargs -0 -n1 -P4 php -l
-
-  coding-standards:
-    name: PHPCS / PHPCompatibility
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+          tools: none
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.3'
           coverage: none
-          tools: composer:v2
-      - name: Install dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
-      - name: PHPCS (PHPCompatibility, testVersion 7.2-)
-        run: vendor/bin/phpcs
+      - run: composer install --no-interaction --no-progress
+      - run: composer test
+      - run: composer test:e2e
+      - run: composer test:upgrade
 
-  phpstan:
-    name: PHPStan
+  # The one check the main branch rule requires, so changing the matrix never breaks the rule.
+  passed:
+    name: CI passed
+    # Always runs: a skipped required check would count as passed.
+    if: always()
+    needs: [standards, tests]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          tools: composer:v2
-      - name: Install dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
-      - name: PHPStan (level 5)
-        run: composer phpstan
-
-  test:
-    name: Unit + integration tests (PHP ${{ matrix.php }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        php: [ '8.2', '8.3', '8.4' ]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: ${{ matrix.php }}
-          coverage: none
-          tools: composer:v2
-      - name: Install dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
-      - name: PHPUnit (unit + integration)
-        run: vendor/bin/phpunit
-      - name: PHPUnit (Two Factor absent fail-safe)
-        run: vendor/bin/phpunit -c phpunit-no-two-factor.xml.dist
-
-  coverage:
-    name: Coverage (PHP 8.3)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: pcov
-          tools: composer:v2
-      - name: Install dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
-      - name: PHPUnit with coverage
-        run: |
-          vendor/bin/phpunit --coverage-text --coverage-clover=coverage.xml | tee coverage.txt
-          # The Two-Factor-absent suite covers branches unreachable under the default
-          # bootstrap; include its clover so the ratchet sees combined coverage.
-          vendor/bin/phpunit -c phpunit-no-two-factor.xml.dist --coverage-clover=coverage-no-two-factor.xml
-          {
-            echo '### Code coverage'
-            echo '```'
-            cat coverage.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Enforce coverage floor
-        # Keep a little headroom below the current combined figure while making
-        # meaningful regressions fail. Untestable glue is @codeCoverageIgnore'd.
-        run: php bin/coverage-threshold.php 90 coverage.xml coverage-no-two-factor.xml
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: coverage-clover
-          path: |
-            coverage.xml
-            coverage-no-two-factor.xml
-
-  playground-integration:
-    name: Playground integration (real Two Factor)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: '20'
-      - name: Boot real WordPress + Two Factor, assert enforcement end-to-end
-        run: |
-          rm -f .ci-result
-          npx --yes @wp-playground/cli@3.1.43 run-blueprint \
-            --blueprint=playground/ci-blueprint.json \
-            --mount="$PWD:/wordpress/wp-content/plugins/force-email-two-factor"
-          echo "Assertion result: $(cat .ci-result 2>/dev/null || echo MISSING)"
-          test "$(cat .ci-result 2>/dev/null)" = "FORCE2FA_ASSERT_OK"
-
-  multisite-e2e:
-    name: Multisite E2E (network-only)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress multisite, network-only behavior end-to-end
-        run: bash bin/multisite-e2e.sh
-
-  multisite-scope-e2e:
-    name: Multisite scope E2E (network-wide enforcement)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress multisite, network-wide capability + role scope end-to-end
-        run: bash bin/multisite-scope-e2e.sh
-
-  api-login-e2e:
-    name: API-login E2E (real Two Factor)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress + Two Factor, API-login allowlist end-to-end
-        run: bash bin/api-login-e2e.sh
-
-  scope-activation-e2e:
-    name: Scope-activation E2E (first-run choice)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress + Two Factor, activation-time scope choice end-to-end
-        run: bash bin/scope-activation-e2e.sh
-
-  email-fallback-e2e:
-    name: Email-fallback E2E (native method + primary)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress + Two Factor, email-as-fallback + primary end-to-end
-        run: bash bin/email-fallback-e2e.sh
-
-  install-handler-e2e:
-    name: Install-handler E2E (one-click install)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress, one-click Two Factor install handler end-to-end
-        run: bash bin/install-handler-e2e.sh
-
-  blocking-mode-e2e:
-    name: Blocking-mode E2E (real Two Factor)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress + Two Factor, blocking-mode gate end-to-end
-        run: bash bin/blocking-mode-e2e.sh
-
-  min-wp-e2e:
-    name: Minimum WordPress E2E (6.8)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      # Proves the advertised minimum works end-to-end: on WordPress 6.8, the current
-      # Two Factor release installs and the plugin actually enforces. Guards against the
-      # floor drifting below Two Factor's own "Requires at least".
-      - name: Two Factor installs and enforces on the minimum WordPress (6.8)
-        run: WP_VERSION='6.8' bash bin/blocking-mode-e2e.sh
-
-  update-e2e:
-    name: Update E2E (GitHub Releases)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.3'
-          coverage: none
-          extensions: sqlite3, pdo_sqlite
-      - name: Real WordPress update from GitHub Release asset
-        run: bash bin/update-e2e.sh
-        env:
-          # Authenticated GitHub API calls (script + Plugin Update Checker):
-          # anonymous requests share a ~60/hr per-IP quota across hosted runners.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # A latest release without the zip asset is external release state a PR
-          # cannot influence — skip with a warning on PRs, hard-fail on main.
-          FORCE2FA_UPDATE_E2E_TOLERATE_MISSING_ASSET: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+      - run: '[ "${{ needs.standards.result }}" = success ] && [ "${{ needs.tests.result }}" = success ]'

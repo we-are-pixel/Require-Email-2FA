@@ -1,36 +1,14 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="tests/bootstrap.php"
-         colors="true"
-         cacheDirectory=".phpunit.cache">
-    <source>
-        <include>
-            <file>force-email-two-factor.php</file>
-        </include>
-    </source>
-    <testsuites>
-        <testsuite name="unit">
-            <file>tests/ExemptTest.php</file>
-            <file>tests/ExternalTwoFactorTest.php</file>
-            <file>tests/PrimaryProviderTest.php</file>
-            <file>tests/MemoizationTest.php</file>
-            <file>tests/AllowlistTest.php</file>
-            <file>tests/EnabledProvidersFilterTest.php</file>
-            <file>tests/ApiLoginFilterTest.php</file>
-            <file>tests/ApiGateTest.php</file>
-            <file>tests/DependencyCheckTest.php</file>
-            <file>tests/UpdateCheckerAccessorTest.php</file>
-            <file>tests/AppPasswordBindingTest.php</file>
-            <file>tests/SelfUpdateStatusTest.php</file>
-            <file>tests/DependencyNoticeTest.php</file>
-            <file>tests/BlockingModeTest.php</file>
-            <file>tests/ScopePromptTest.php</file>
-            <!-- Last: uninstall.php runs at include time and defines a constant/function. -->
-            <file>tests/UninstallTest.php</file>
-        </testsuite>
-        <testsuite name="integration">
-            <file>tests/IntegrationTest.php</file>
-        </testsuite>
-    </testsuites>
+	xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+	bootstrap="tests/phpunit/bootstrap.php"
+	cacheDirectory=".phpunit.cache"
+	colors="true"
+	failOnRisky="true"
+	failOnWarning="true">
+	<testsuites>
+		<testsuite name="plugin">
+			<directory>tests/phpunit</directory>
+		</testsuite>
+	</testsuites>
 </phpunit>

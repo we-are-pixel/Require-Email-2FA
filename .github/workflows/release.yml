@@ -1,164 +1,88 @@
 name: Release
 
-# Build the distributable plugin zip and publish it as a GitHub Release asset on
-# every version tag (v1.2.3). The zip is what Plugin Update Checker downloads for
-# in-place / auto-updates on installed sites.
-#
-# The sole runtime dependency (Plugin Update Checker) is committed under vendor/,
-# so the build is just `git archive` — no Composer, no dependency resolution at
-# release time. The published bytes are therefore identical to what is reviewed in
-# the repo, and Packagist is not in the release-time trust path. (This pipeline is
-# the plugin's trust boundary: its output auto-installs on every site.)
-#
-# Fork knob: PLUGIN_SLUG is the plugin's folder/main-file/zip name. A fork that
-# renames the plugin changes it here; the runtime updater derives the same value
-# from the installed folder, so the two stay in sync.
-#
-# Actions are pinned to a full commit SHA (Dependabot bumps them, keeping the
-# version in the trailing comment) so a moved tag cannot inject code into a job
-# that holds a contents:write token.
+# Merging to main with a new version in force-email-two-factor.php publishes a GitHub
+# release. Sites (and MainWP) then show the update; nothing installs on its own.
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 permissions:
-  contents: write     # create the Release and upload the assets
-  id-token: write     # mint the OIDC token for the build-provenance attestation
-  attestations: write # record the provenance attestation for the zip
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build and publish plugin zip
+  version:
+    name: New version?
     runs-on: ubuntu-latest
-    # Gate publishing behind an environment: configure "release" with Required
-    # reviewers (Settings -> Environments -> release) to require a human approval
-    # before this contents:write job can publish. Referencing an unconfigured
-    # environment runs the job unchanged, so this is safe to ship un-gated and
-    # turn on later. See docs/SUPPLY-CHAIN-SECURITY.md section 2.3.
-    environment: release
-    env:
-      PLUGIN_SLUG: force-email-two-factor
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      new: ${{ steps.version.outputs.new }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0 # full history so the default-branch ancestry check below can resolve
-
-      - name: Verify the tag points at a reviewed commit on the default branch
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: version
         run: |
-          # The tag ruleset controls WHO can push a v* tag, not WHAT it points at, and
-          # the build below archives this commit. Refuse to release a commit that never went
-          # through PR + CODEOWNERS review on the default branch — otherwise a
-          # tag-authorized (or compromised) account could ship unreviewed code by
-          # tagging an arbitrary commit directly.
-          default_branch="${{ github.event.repository.default_branch }}"
-          git fetch --no-tags origin "${default_branch}"
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/${default_branch}"; then
-            echo "::error::Tag ${GITHUB_REF_NAME} (${GITHUB_SHA}) is not contained in origin/${default_branch}. Release tags must point at a reviewed commit on the default branch."
+          version="$(sed -n 's/^ \* Version: *//p' force-email-two-factor.php)"
+          constant="$(sed -n "s/^define( 'FORCE_2FA_VERSION', '\(.*\)' );/\1/p" force-email-two-factor.php)"
+          if [ "$version" != "$constant" ]; then
+            echo "::error::Version header ($version) and FORCE_2FA_VERSION ($constant) differ."
             exit 1
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Exit code 2 means "no such tag"; anything else is a lookup error, not a new version.
+          status=0
+          git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null || status=$?
+          case "$status" in
+            0) echo "new=false" >> "$GITHUB_OUTPUT" ;;
+            2) echo "new=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check tags (git exit $status)."; exit 1 ;;
+          esac
 
-      - name: Verify tag matches the plugin Version header
+  checks:
+    needs: version
+    if: needs.version.outputs.new == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish v${{ needs.version.outputs.version }}
+    needs: [version, checks]
+    runs-on: ubuntu-latest
+    # Waits for a required reviewer to approve (Settings -> Environments -> release).
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v${{ needs.version.outputs.version }}
+      ZIP: dist/Require-Email-2FA-main.zip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Besides admins, only this deploy key may create tags (Settings -> Rules).
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+      - run: bash bin/build.sh dist
+      - name: Check the zip
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          header="$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*//p' "${PLUGIN_SLUG}.php" | head -n1 | tr -d '[:space:]')"
-          echo "Tag version:    ${tag}"
-          echo "Header version: ${header}"
-          if [ "${tag}" != "${header}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match Version: ${header} in ${PLUGIN_SLUG}.php. Bump the header (and FORCE_2FA_LOADED / readme.txt Stable tag) before tagging."
+          paths="$(zipinfo -1 "$ZIP")"
+          grep -qx 'Require-Email-2FA-main/force-email-two-factor.php' <<<"$paths"
+          grep -qx 'Require-Email-2FA-main/vendor/yahnis-elsts/plugin-update-checker/plugin-update-checker.php' <<<"$paths"
+          if grep -v '^Require-Email-2FA-main/' <<<"$paths" || grep -E '^Require-Email-2FA-main/(tests|bin|\.github)/' <<<"$paths"; then
+            echo "::error::The zip must contain only the plugin, inside Require-Email-2FA-main/."
             exit 1
           fi
-
-      # Re-run the suite against the exact tagged commit before it becomes an
-      # auto-update payload. CI already gates main, but a tag can point anywhere, so
-      # a green suite here is what actually guards what ships. (Dev deps only — the
-      # build below uses `git archive`, so this never touches the zip contents.)
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+      # Signed proof that this zip was built here, from this commit: gh attestation verify.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          php-version: '8.3'
-          coverage: none
-          tools: composer:v2
-
-      - name: Install dev dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
-
-      - name: Test gate (PHPCS + PHPStan + PHPUnit)
-        run: composer check
-
-      - name: Build plugin zip
-        run: |
-          # git archive honours .gitattributes export-ignore (strips tests/,
-          # .github/, composer.* etc.) and includes the committed vendored updater
-          # under vendor/yahnis-elsts/. No Composer step is needed.
-          #
-          # Archive the exact commit the ancestry/version gates verified —
-          # ${GITHUB_SHA}, not HEAD — so an intervening step (a composer plugin,
-          # a stray checkout) that moved HEAD can't ship a different tree than the
-          # one that passed review.
-          git archive --format=zip --prefix="${PLUGIN_SLUG}/" -o "${PLUGIN_SLUG}.zip" "${GITHUB_SHA}"
-          echo "Zip contents (tail):"
-          unzip -l "${PLUGIN_SLUG}.zip" | tail -n 20
-          # Fail loudly if the updater did not make it into the payload.
-          unzip -l "${PLUGIN_SLUG}.zip" | grep -q "vendor/yahnis-elsts/plugin-update-checker/plugin-update-checker.php" \
-            || { echo "::error::Plugin Update Checker missing from zip"; exit 1; }
-          # Publish a checksum alongside the asset so a download can be verified.
-          sha256sum "${PLUGIN_SLUG}.zip" > "${PLUGIN_SLUG}.zip.sha256"
-          cat "${PLUGIN_SLUG}.zip.sha256"
-
-      # Cryptographic provenance: proof the zip was built by THIS repo's release
-      # workflow from this commit (Sigstore). Auditable via `gh attestation verify`.
-      # See docs/SUPPLY-CHAIN-SECURITY.md section 3.
-      #
-      # continue-on-error (not an `if:` on visibility): attestations work on public
-      # repos AND on private/internal repos on GitHub Enterprise Cloud, but not on a
-      # private Free/Pro/Team repo — where the step would fail. Attempting it and
-      # tolerating failure means every repo that CAN attest does, and the rest still
-      # publish (checksum-only). The next step keys the release notes off the outcome.
-      - name: Attest build provenance for the release zip
-        id: attest
-        continue-on-error: true
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: ${{ env.PLUGIN_SLUG }}.zip
-
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ATTESTED: ${{ steps.attest.outcome }}
-        run: |
-          tag="${GITHUB_REF_NAME}"
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            gh release upload "${tag}" "${PLUGIN_SLUG}.zip" "${PLUGIN_SLUG}.zip.sha256" --clobber
-          else
-            gh release create "${tag}" "${PLUGIN_SLUG}.zip" "${PLUGIN_SLUG}.zip.sha256" \
-              --title "${tag}" \
-              --generate-notes
-          fi
-
-          # Append verification instructions to the release notes. On a rerun the
-          # body may already contain our block (this job supports existing releases
-          # via --clobber), so strip any prior block and trailing blanks first — never
-          # stack duplicate verification sections in the public notes.
-          gh release view "${tag}" --json body --jq .body > notes.md
-          sed -i '/^## Verify this release$/,$d' notes.md
-          perl -0pi -e 's/\s+\z/\n/' notes.md
-          digest="$(cut -d' ' -f1 "${PLUGIN_SLUG}.zip.sha256")"
-          {
-            echo
-            echo "## Verify this release"
-            echo "- SHA-256: \`${digest}\`"
-            echo "- Checksum: \`sha256sum -c ${PLUGIN_SLUG}.zip.sha256\`"
-            if [ "${ATTESTED}" = "success" ]; then
-              # Pin --signer-workflow (only THIS workflow's provenance is accepted) and
-              # --source-ref (only an artifact built from THIS tag), so an attested zip
-              # from another workflow or another release cannot pass verification.
-              echo "- Provenance: \`gh attestation verify ${PLUGIN_SLUG}.zip --repo ${GITHUB_REPOSITORY} --signer-workflow ${GITHUB_REPOSITORY}/.github/workflows/release.yml --source-ref refs/tags/${tag}\`"
-            fi
-            echo "- Reproduce from source: see docs/SUPPLY-CHAIN-SECURITY.md"
-          } >> notes.md
-          gh release edit "${tag}" --notes-file notes.md
+          subject-path: ${{ env.ZIP }}
+      # Draft first, so sites never see a release without its zip. The deploy key pushes
+      # the tag because the Actions token may not create tags.
+      - run: |
+          gh release create "$TAG" "$ZIP" --draft --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+          gh release edit "$TAG" --draft=false --latest
