@@ -1,6 +1,6 @@
 {
-    "name": "dknauss/require-email-2fa",
-    "description": "Enforce email two-factor for all users via the Two Factor plugin, with per-role exclusions and a hardened API-login allowlist.",
+    "name": "we-are-pixel/require-email-2fa",
+    "description": "Requires two-factor login on Pixel-managed WordPress sites (Require Email 2FA plugin).",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
     "require": {
@@ -19,19 +19,28 @@
     "config": {
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true
-        }
+        },
+        "process-timeout": 0
     },
     "scripts": {
-        "test": "phpunit",
-        "test:no-two-factor": "phpunit -c phpunit-no-two-factor.xml.dist",
-        "phpcs": "phpcs",
-        "phpcbf": "phpcbf",
-        "phpstan": "phpstan analyse --memory-limit=1G",
+        "lint": "phpcs",
+        "lint:fix": "phpcbf",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "test": [
+            "bash tests/bin/setup-wp.sh single",
+            "bash tests/bin/setup-wp.sh multisite",
+            "phpunit",
+            "WP_TESTS_MULTISITE=1 phpunit"
+        ],
+        "test:e2e": "bash tests/e2e/run.sh",
+        "test:upgrade": "bash tests/upgrade/run.sh",
         "check": [
-            "@phpcs",
-            "@phpstan",
+            "@composer audit",
+            "@lint",
+            "@analyse",
             "@test",
-            "@test:no-two-factor"
+            "@test:e2e",
+            "@test:upgrade"
         ]
     }
 }

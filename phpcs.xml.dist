@@ -1,44 +1,28 @@
 <?xml version="1.0"?>
-<ruleset name="force-email-two-factor">
-    <description>WordPress coding standards (full) + PHP cross-version compatibility for the production plugin code.</description>
+<ruleset name="Require Email 2FA">
+	<description>WordPress Coding Standards and PHP 7.2+ compatibility for the plugin code.</description>
 
-    <!-- Production files only — dev/test code may use newer syntax. -->
-    <file>force-email-two-factor.php</file>
-    <file>mu-loader.php</file>
-    <file>uninstall.php</file>
+	<file>force-email-two-factor.php</file>
+	<file>uninstall.php</file>
+	<file>includes</file>
 
-    <exclude-pattern>*/vendor/*</exclude-pattern>
-    <exclude-pattern>*/tests/*</exclude-pattern>
+	<arg name="colors"/>
+	<arg value="sp"/>
 
-    <arg name="colors"/>
-    <arg value="sp"/>
+	<config name="testVersion" value="7.2-"/>
+	<rule ref="PHPCompatibility"/>
 
-    <!-- Verify the plugin runs on every PHP version it claims to support. -->
-    <config name="testVersion" value="7.2-"/>
-    <rule ref="PHPCompatibility"/>
+	<config name="minimum_wp_version" value="6.7"/>
+	<config name="text_domain" value="force-email-two-factor"/>
+	<rule ref="WordPress"/>
 
-    <!-- Full WordPress coding standards: Core + Extra + Docs — style, security,
-         and documentation rigor. (Directory/.org-submission rules live in the
-         Plugin Check tool, not here; this plugin is distributed from GitHub.) -->
-    <config name="minimum_wp_version" value="6.5"/>
-    <rule ref="WordPress">
-        <!-- "Inline comments must end in a full stop" fights directives and
-             intentional examples that are not sentences: PHPUnit @codeCoverageIgnore
-             annotations, phpcs: directives, and the commented-out opt-in example
-             config. Every other documentation sniff still applies. -->
-        <exclude name="Squiz.Commenting.InlineComment.InvalidEndChar"/>
-    </rule>
-
-    <!-- Validate that translatable strings use the plugin's text domain. -->
-    <config name="text_domain" value="force-email-two-factor"/>
-
-    <!-- All globals this plugin defines use these prefixes. -->
-    <rule ref="WordPress.NamingConventions.PrefixAllGlobals">
-        <properties>
-            <property name="prefixes" type="array">
-                <element value="force_2fa"/>
-                <element value="FORCE_2FA"/>
-            </property>
-        </properties>
-    </rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="force_2fa"/>
+			</property>
+		</properties>
+		<!-- Views are included inside a method, so their variables are local, not globals. -->
+		<exclude-pattern>*/includes/views/*</exclude-pattern>
+	</rule>
 </ruleset>

@@ -1,12 +1,5 @@
-# Ignore all Composer dependencies EXCEPT the vendored runtime updater (Plugin
-# Update Checker). It is committed on purpose so the exact bytes that auto-update
-# installed sites are reviewed and pinned in-repo, not resolved fresh from
-# Packagist at release time (the release pipeline is this plugin's trust boundary).
+# Composer dev tools are not committed; the bundled updater is (it ships in the zip).
 /vendor/*
 !/vendor/yahnis-elsts/
 /.phpunit.cache/
-.phpunit.result.cache
-composer.phar
-coverage.xml
-coverage.txt
-.ci-result
+/dist/
